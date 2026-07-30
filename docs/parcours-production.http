@@ -251,7 +251,12 @@ Content-Type: application/json
 
 ### 3.4 — Enregistrer le boîtier
 ### ATTENDU : 201, sensorHealth SAINE.
-### ⭐ Recopiez id dans @deviceId.
+### ⭐ Recopiez id dans @deviceId — le bloc 3.5 en a besoin.
+###
+### ⭐ Ce bloc est FACULTATIF depuis l'auto-enregistrement : un technicalId
+###    inconnu crée le boîtier à son premier relevé. Le garder ici sert à deux
+###    choses — nommer le boîtier autrement que « Boîtier auto … », et disposer
+###    de son identifiant pour déclarer ses sondes.
 POST {{api}}/devices
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -265,6 +270,55 @@ Content-Type: application/json
   "batteryVoltage": 4.05,
   "firmwareVersion": "1.4.2"
 }
+
+
+### 3.5 — Déclarer les sondes du boîtier
+### ATTENDU : 201 pour chacune.
+###
+### ⚠️ CE BLOC N'EST PAS UN PRÉREQUIS À L'INGESTION, et il faut le savoir avant
+###    de chercher un lien qui n'existe pas. Vérifié dans le code :
+###
+###      · SensorReading ne porte AUCUNE référence vers Sensor ;
+###      · SensorRepository n'est lu que par son propre CRUD — ni l'ingestion,
+###        ni le diagnostic, ni SensorHealthAnalyzer ne le consultent.
+###
+###    Un relevé est rattaché au BOÎTIER, jamais à une sonde. « Quelle sonde a
+###    produit cette mesure » n'est donc pas enregistré : c'est le nom du champ
+###    (humiditeSol, ph…) qui porte l'information.
+###
+### ⭐ À quoi sert alors cette ressource : à décrire le parc. Elle répond à
+###    « de quoi ce boîtier est-il équipé ? », ce qu'aucune autre vue ne dit —
+###    un boîtier dont la sonde de pH n'a jamais été posée est indiscernable
+###    d'un boîtier dont la sonde de pH est en panne, si l'on ne regarde que
+###    les relevés.
+###
+### ⚠️ SensorHealthAnalyzer juge donc les MESURES, pas les sondes déclarées.
+###    Déclarer une sonde ici ne le fera pas surveiller quoi que ce soit de plus.
+POST {{api}}/sensors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "deviceId": "{{deviceId}}", "sensorType": "HUMIDITE_SOL", "status": "ACTIVE" }
+
+###
+POST {{api}}/sensors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "deviceId": "{{deviceId}}", "sensorType": "TEMPERATURE", "status": "ACTIVE" }
+
+###
+POST {{api}}/sensors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "deviceId": "{{deviceId}}", "sensorType": "PH", "status": "ACTIVE" }
+
+### 3.6 — Le parc du boîtier
+### ATTENDU : 200, les trois sondes déclarées.
+### ⭐ C'est la seule vue qui répond à « de quoi ce boîtier est-il équipé ? ».
+GET {{api}}/sensors?deviceId={{deviceId}}
+Authorization: Bearer {{token}}
 
 
 ### ============================================================
