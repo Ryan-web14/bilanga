@@ -112,6 +112,58 @@ public class BilangaProperties {
 
         @Min(0)
         private long retryBackoffMillis = 250;
+
+        @Valid private final Warmup warmup = new Warmup();
+
+        /**
+         * Réveil périodique du microservice d'inférence.
+         *
+         * <h2>Le problème</h2>
+         *
+         * <p>Un dyno hébergé s'endort après une période d'inactivité. Le premier appel qui
+         * suit paie le démarrage complet — chargement du runtime, des poids des modèles —
+         * soit vingt à trente secondes. Or le client d'inférence coupe à
+         * {@link #visionTimeoutSeconds} (30 s) et la plateforme coupe elle-même à 30 s :
+         * <strong>le premier diagnostic après une mise en veille échoue presque à coup
+         * sûr</strong>, et il se lit comme {@code ML_INDISPONIBLE}, c'est-à-dire comme une
+         * panne. C'est le pire moment pour ça — une démonstration commence toujours par le
+         * premier appel.
+         *
+         * <h2>Ce que le réveil fait, et ne fait pas</h2>
+         *
+         * <p>Il n'empêche pas le service de s'endormir : il le réveille <strong>tant que le
+         * backend est lui-même actif</strong>. C'est exactement la garantie utile — quelqu'un
+         * qui interroge le backend va interroger l'inférence dans la minute. Le tenir éveillé
+         * la nuit consommerait des heures de dyno sans que personne n'en profite.
+         *
+         * <p>Le premier réveil a lieu au démarrage de l'application, sans attendre le premier
+         * intervalle : c'est le cas qui compte le plus.
+         */
+        @Data
+        public static class Warmup {
+
+            private boolean enabled = true;
+
+            /**
+             * Trente minutes est le seuil de mise en veille usuel. Vingt minutes laisse une
+             * marge sans multiplier les appels : trois par heure, sur un point de terminaison
+             * qui ne fait que répondre.
+             */
+            @Min(1)
+            private long intervalMinutes = 20;
+
+            /**
+             * Généreux, et volontairement : un service endormi met vingt à trente secondes à
+             * répondre. Couper avant reviendrait à ne jamais réussir le seul appel qui
+             * compte — celui qui réveille.
+             */
+            @Min(1)
+            private long timeoutSeconds = 60;
+
+            /** Point de terminaison sans effet de bord, ajouté à {@code base-url}. */
+            @NotBlank
+            private String path = "/health";
+        }
     }
 
     /** Réception des relevés émis par le matériel de terrain. */

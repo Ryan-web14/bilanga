@@ -138,6 +138,29 @@ bilanga:
     max-attempts: 2
     retry-backoff-millis: 250
 
+    # Réveil périodique du microservice.
+    #
+    # LE PROBLÈME. Un dyno s'endort après une période d'inactivité, et le premier
+    # appel qui suit paie le démarrage complet — vingt à trente secondes. Or le
+    # client coupe à 30 s sur la vision, et la plateforme coupe elle-même à 30 s
+    # sans que ce soit configurable : le premier diagnostic après une mise en
+    # veille échoue presque à coup sûr, et il échoue en ML_INDISPONIBLE — soit
+    # exactement comme une panne réelle.
+    #
+    # CE QUE CELA NE FAIT PAS : empêcher le service de s'endormir. Le réveil n'a
+    # lieu que tant que le backend tourne — ce qui est la garantie utile, puisque
+    # celui qui interroge le backend interrogera l'inférence dans la minute. Le
+    # tenir éveillé la nuit consommerait des heures de dyno pour personne.
+    warmup:
+      enabled: ${BILANGA_ML_WARMUP_ENABLED:true}
+      # 30 min est le seuil de veille usuel ; 20 laisse une marge sans multiplier
+      # les appels — trois par heure, sur un point sans effet de bord.
+      interval-minutes: ${BILANGA_ML_WARMUP_INTERVAL_MINUTES:20}
+      # Généreux à dessein : un service endormi met 20 à 30 s à répondre. Couper
+      # avant reviendrait à ne jamais réussir le seul appel qui compte.
+      timeout-seconds: ${BILANGA_ML_WARMUP_TIMEOUT_SECONDS:60}
+      path: ${BILANGA_ML_WARMUP_PATH:/health}
+
   # Réception des relevés du matériel de terrain.
   # Vide ⇒ l'ingestion répond 503. Valorisée par profil.
   ingest:
