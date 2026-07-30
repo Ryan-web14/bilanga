@@ -1,0 +1,9 @@
+//todo
+
+Invalider toutes les sessions lors de la modification du mot de passe
+
+Record l'evenement de changement de mot de passe
+
+Mettre en place un password event listener
+
+//add the retry mechanism for email

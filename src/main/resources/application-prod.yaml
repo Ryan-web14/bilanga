@@ -1,0 +1,89 @@
+# ============================================================
+# Profil PROD
+#
+# Aucune valeur par défaut pour ce qui est sensible : tout vient de
+# l'environnement. Une variable oubliée doit empêcher le démarrage, pas
+# faire tourner le service avec un secret de développement — c'est
+# précisément le risque que créait l'absence de profils, où le secret JWT
+# codé en dur s'appliquait partout sans que rien ne le signale.
+#
+# Le contrôle est fait par ConfigurationGuard, qui refuse le démarrage si un
+# secret est vide, trop court, ou égal à une valeur de développement connue.
+# ============================================================
+
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+app:
+  dev-mode: false
+  error:
+    verbose: false
+
+  security:
+    # En production, aucune route métier n'est ouverte : chaque appel est
+    # confronté à la matrice de AdminApiAuthorizationManager. Contrairement au
+    # profil dev, la valeur n'est PAS surchargeable par l'environnement — une
+    # variable oubliée ne doit pas pouvoir rouvrir l'API entière.
+    open-business-routes:
+      enabled: false
+
+    # Auto-admin refusé : ConfigurationGuard empêche déjà le démarrage s'il est
+    # actif ici, mais le poser à false rend l'intention explicite plutôt que
+    # dépendante d'un contrôle.
+    auto-admin:
+      enabled: false
+
+    # Redondant — DefaultAdminSeeder porte @Profile("dev") et n'existe donc pas
+    # ici. Posé quand même à false, et NON surchargeable par l'environnement :
+    # l'intention doit se lire dans le fichier, pas se déduire d'une annotation
+    # qu'on pourrait élargir un jour sans mesurer ce qu'on ouvre.
+    #
+    # En production, le premier compte se crée par
+    # POST /admin/provisioning/bootstrap-admin, avec un mot de passe choisi par
+    # l'opérateur et jamais écrit dans le dépôt.
+    bootstrap-admin:
+      enabled: false
+
+    ownership:
+      enabled: true
+
+    # Énumération obligatoire : « * » n'a pas de sens ici, et son absence de
+    # valeur par défaut fait échouer le démarrage plutôt que d'ouvrir l'API à
+    # toute origine par oubli.
+    cors:
+      allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGINS}
+    jwt:
+      # Repli volontairement VIDE, et non absent : un placeholder non résolu fait
+      # échouer Spring avec un message qui recopie la valeur par défaut du code —
+      # c'est-à-dire le secret codé en dur — dans les journaux. Une valeur vide
+      # laisse ConfigurationGuard produire un refus clair, sans rien divulguer.
+      secret: ${APP_JWT_SECRET:}
+    token-hash:
+      secret: ${TOKEN_HASH_SECRET:}
+
+bilanga:
+  ingest:
+    device-key: ${BILANGA_INGEST_DEVICE_KEY:}
+
+    # Pilotable, comme demandé — mais ConfigurationGuard journalise un
+    # avertissement appuyé si l'authentification est levée ici.
+    require-device-key: ${BILANGA_INGEST_REQUIRE_DEVICE_KEY:true}
+
+# La documentation décrit l'intégralité de la surface d'API, y compris les
+# routes d'administration. Utile en développement, inutile à exposer en
+# production — où elle sert surtout à qui cherche par où entrer.
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:false}
+
+logging:
+  level:
+    root: WARN
+    com.sni.bilanga: INFO
+    org.hibernate.SQL: WARN

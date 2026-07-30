@@ -1,0 +1,423 @@
+# ============================================================
+# Bilanga — configuration commune
+#
+# Ce fichier ne contient QUE ce qui est vrai dans tous les environnements.
+# Ce qui varie est dans application-dev.yaml et application-prod.yaml.
+#
+# ⚠️ Règle : toute clé écrite ici doit correspondre à un champ de
+# BilangaProperties. Une clé qui ne se lie à rien est ignorée en silence — c'est
+# exactement ce qui s'était produit avec « bilanga.risk.ml.base-url », que le
+# code ne lisait pas : le fichier annonçait un réglage, la valeur codée en dur
+# s'appliquait, et personne ne pouvait le voir.
+#
+# Aucune valeur sensible ici. Les secrets viennent de l'environnement.
+# ============================================================
+
+spring:
+  application:
+    name: bilanga
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    # Ordre de préséance : Heroku d'abord, variables locales ensuite, défaut de
+    # développement en dernier. Le buildpack Java d'Heroku expose JDBC_DATABASE_*
+    # en plus de DATABASE_URL, qui n'est PAS une URL JDBC et ne peut pas être
+    # utilisée telle quelle.
+    url: ${JDBC_DATABASE_URL:${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:55820/bilanga_dev_db}}
+    username: ${JDBC_DATABASE_USERNAME:${SPRING_DATASOURCE_USERNAME:devuser}}
+    password: ${JDBC_DATABASE_PASSWORD:${SPRING_DATASOURCE_PASSWORD:bilanga25}}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:20000}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate          # Flyway possède le schéma ; JPA se contente de valider
+    properties:
+      hibernate:
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  jackson:
+    mapper:
+      # « TOMATE », « tomate » et « Tomate » désignent la même chose. Exiger la
+      # casse exacte n'apportait aucune sûreté et transformait une différence de
+      # présentation en erreur 400.
+      accept-case-insensitive-enums: true
+
+  data:
+    redis:
+      # Une URL, et non un couple hôte/port : c'est sous cette forme qu'Heroku
+      # fournit Redis (REDIS_URL = redis://:motdepasse@hôte:port). Le repli
+      # reconstruit une URL valide à partir des variables locales, de sorte que
+      # la valeur n'est JAMAIS vide — ce qui évite d'avoir à savoir comment
+      # Spring Boot traiterait une URL vide.
+      url: ${REDIS_URL:redis://${SPRING_DATA_REDIS_HOST:localhost}:${SPRING_DATA_REDIS_PORT:6379}}
+
+      # Courts : une lenteur de Redis ne doit pas se propager à l'ingestion.
+      # Le cache à deux niveaux bascule sur Caffeine dès qu'un appel échoue.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:2s}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:2s}
+
+    web:
+      pageable:
+        default-page-size: 20
+        # Borne les pages : sans elle, ?size=100000 ramène toute la table.
+        max-page-size: 100
+
+  # Orchestration Docker locale. Le module s'active à la seule présence d'un
+  # fichier compose au démarrage et tente alors de lancer les conteneurs — ce
+  # qui n'a aucun sens sur une plateforme hébergée, où il n'y a pas de démon
+  # Docker et où l'échec se produirait AVANT que le contexte ne soit prêt.
+  # Le dépôt est déjà couvert par .slugignore ; le poser ici ferme la question
+  # pour tout environnement, y compris un conteneur bâti à la main.
+  docker:
+    compose:
+      enabled: ${SPRING_DOCKER_COMPOSE_ENABLED:false}
+
+server:
+  # ⚠️ PORT d'abord : c'est la variable qu'impose la plateforme hébergée, et le
+  # dyno est tué au bout de soixante secondes si le processus n'écoute pas
+  # dessus. Spring Boot ne la lit PAS de lui-même — SERVER_PORT est la seule
+  # forme que la liaison relâchée reconnaisse, et elle n'est pas celle
+  # qu'Heroku expose. L'oubli donne un R10 « Boot timeout » qui ne dit rien de
+  # sa cause : l'application démarre normalement, sur le mauvais port.
+  #
+  # Le Procfile passe déjà -Dserver.port=$PORT ; les deux se recouvrent
+  # volontairement, pour qu'un démarrage sans Procfile (conteneur, one-off
+  # dyno, `java -jar` manuel) se comporte de la même façon.
+  port: ${PORT:${SERVER_PORT:8080}}
+
+# ============================================================
+# Documentation d'API (springdoc / Swagger)
+#
+# Les chemins étaient déjà en permitAll dans SecurityConfig, et l'interface
+# répondait pourtant 401. Deux causes possibles, traitées ici et dans
+# SecurityConfig :
+#   · les ressources statiques de l'interface sont servies depuis /webjars/**,
+#     qui n'était PAS déclaré public — la page se chargeait puis restait vide,
+#     ce qui se diagnostique très mal ;
+#   · le chemin /v3/api-docs sans barre finale, et /v3/api-docs.yaml, ne sont
+#     pas couverts par /v3/api-docs/** .
+#
+# Déclarer les chemins explicitement plutôt que de dépendre des défauts : si
+# l'un change à la montée de version, la règle de sécurité correspondante
+# cesserait de correspondre en silence.
+# ============================================================
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /swagger-ui.html
+    # Regroupe les routes par contrôleur plutôt que de les lister à plat :
+    # vingt-six contrôleurs, plus de cent-cinquante routes.
+    tags-sorter: alpha
+    operations-sorter: method
+
+# ============================================================
+# Réglages métier — la structure reflète exactement BilangaProperties
+# ============================================================
+bilanga:
+
+  # Microservice d'inférence (Python/FastAPI)
+  ml:
+    base-url: ${BILANGA_ML_BASE_URL:http://localhost:8000}
+    connect-timeout-seconds: 2
+    soil-timeout-seconds: 10
+    vision-timeout-seconds: 30
+    max-attempts: 2
+    retry-backoff-millis: 250
+
+  # Réception des relevés du matériel de terrain.
+  # Vide ⇒ l'ingestion répond 503. Valorisée par profil.
+  ingest:
+    device-key: ${BILANGA_INGEST_DEVICE_KEY:}
+    # false ⇒ n'importe quel appelant peut déposer un relevé, sans en-tête ni clé.
+    # Prévu pour l'intégration du module IoT ; à remettre à true ensuite.
+    require-device-key: ${BILANGA_INGEST_REQUIRE_DEVICE_KEY:true}
+
+  diagnosis:
+    min-interval-minutes: 5
+    throttle:
+      enabled: true
+    image:
+      max-size-bytes: 8388608      # 8 Mo
+    # Variation minimale d'une mesure qui relance un diagnostic
+    # avant l'expiration de l'intervalle.
+    threshold:
+      humidite: 5
+      temperature: 2
+      ph: 0.3
+      nutriment: 5
+      luminosite: 800
+
+  confidence:
+    high: 0.85
+    low: 0.60                      # en deçà : diagnostic non fiable, aucune alerte
+
+  risk:
+    min-score: 0.60                # en deçà : le risque n'est pas signalé
+    high-score: 0.85               # au-delà : risque qualifié d'élevé
+
+  agronomic:
+    min-severity: 0.05
+
+  trend:
+    window-hours: 6
+    min-points: 4
+    horizon-hours: 12
+    max-readings: 60
+    min-r-squared: 0.5             # en deçà : la projection n'est pas publiée
+    negligible-slope-ratio: 0.01
+
+  # Détection de panne de sonde par cohérence. Le contrôle de plausibilité
+  # n'attrape que l'absurde ; une sonde en panne se fige ou dérive en restant
+  # dans les bornes physiques — c'est le seul angle mort qui puisse produire un
+  # conseil nuisible.
+  sensor-health:
+    enabled: true
+    stuck-readings: 6              # au-delà, la stabilité parfaite n'est plus naturelle
+    window-hours: 12
+    min-points: 4                  # en deçà, la série ne permet aucune conclusion
+    max-readings: 60
+    drift-tolerance: 0.25          # écart aux voisins ⇒ SUSPECTE (mesures conservées)
+    decoupling-tolerance: 0.60     # écart aux voisins ⇒ DEFAILLANTE (diagnostic inhibé)
+
+  # Prévisions météo — le sixième moteur. Les cinq autres raisonnent sur le
+  # passé mesuré ; celui-ci est le seul à regarder devant.
+  #
+  # Open-Meteo ne demande AUCUNE clé d'API : le système reste démontrable sans
+  # compte à gérer ni abonnement susceptible d'expirer avant la soutenance.
+  #
+  # enabled: false ⇒ le moteur produit une liste vide, exactement comme quand la
+  # parcelle n'a pas de coordonnées. Le système doit rester utilisable sans
+  # météo, comme il l'est sans microservice d'inférence.
+  weather:
+    enabled: ${BILANGA_WEATHER_ENABLED:true}
+    base-url: ${BILANGA_WEATHER_BASE_URL:https://api.open-meteo.com}
+    cache-ttl-minutes: 60          # le fournisseur borne les appels
+    horizon-hours: 48
+    rain-threshold-mm: 5           # en deçà, l'averse ne dispense pas d'irriguer
+    treatment-rain-window-hours: 6 # pluie sous ce délai ⇒ produit lessivé
+    high-humidity-threshold: 85    # au-delà, conditions favorables aux maladies
+    connect-timeout-seconds: 3
+    read-timeout-seconds: 10
+    max-attempts: 2
+
+  # Risque de voisinage — le huitième moteur (V27). Le seul dont l'information ne
+  # peut venir d'AUCUNE mesure locale : une sonde parfaite ne dira jamais qu'un
+  # mildiou progresse à huit cents mètres.
+  #
+  # Tout était déjà là — coordonnées et index géographique depuis la V16, tous les
+  # diagnostics en base depuis l'origine. Il ne manquait que la requête.
+  #
+  # enabled: false ⇒ liste vide, comme la météo désactivée ou l'absence de voisin.
+  neighbourhood:
+    enabled: ${BILANGA_NEIGHBOURHOOD_ENABLED:true}
+    # 2 km : l'ordre de grandeur sur lequel une maladie foliaire se propage au sein
+    # d'un même terroir. Plus large, chaque détection alerterait tout le village.
+    radius-km: 2.0
+    # 14 jours : un mildiou détecté il y a trois semaines n'annonce plus rien — soit
+    # il a été traité, soit la parcelle est perdue. Alerter sur un foyer éteint est
+    # le meilleur moyen d'apprendre à l'exploitant que ces conseils ne valent rien.
+    freshness-days: 14
+    # Aligné sur confidence.low : un diagnostic non fiable ne lève aucune alerte
+    # chez lui, il serait incohérent qu'il en déclenche une chez le voisin.
+    min-confidence: 0.60
+    # Borne de lisibilité : au-delà de trois foyers, le conseil devient une liste
+    # qu'on ne lit pas.
+    max-outbreaks: 3
+
+  overview:
+    device-silence-minutes: 15
+
+  alert:
+    escalation-threshold: 3
+
+  # Cache des tables de connaissance : Redis partagé, Caffeine local devant.
+  # Le niveau local expire plus vite car rien ne peut le vider de l'extérieur.
+  cache:
+    knowledge-ttl-minutes: ${BILANGA_CACHE_TTL_MINUTES:30}
+    local-ttl-minutes: ${BILANGA_CACHE_LOCAL_TTL_MINUTES:5}
+    knowledge-max-entries: 500
+
+  notification:
+    enabled: true
+    min-level: ELEVEE              # repli ; le seuil personnel de l'utilisateur prime
+    max-attempts: 5
+    dispatch-batch-size: 20
+    grouping-window-minutes: 10    # cinq alertes en dix minutes font UN message
+
+    # Passerelle SMS générique. C'est le canal qui atteint réellement
+    # l'exploitant : téléphone simple, sans forfait données, couverture bien
+    # supérieure à celle de l'internet mobile.
+    #
+    # url vide ⇒ canal indisponible : rien n'est enfilé, aucun échec n'est
+    # compté, et le système reste démontrable sans compte opérateur. Se branche
+    # sur Africa's Talking, Twilio ou une passerelle locale sans une ligne de
+    # Java — seul ce bloc change.
+    sms:
+      enabled: ${BILANGA_SMS_ENABLED:false}
+      url: ${BILANGA_SMS_URL:}
+      method: POST
+      content-type: application/json
+      body-template: '${BILANGA_SMS_BODY_TEMPLATE:{"to":"{{to}}","message":"{{body}}","from":"{{from}}"}}'
+      sender: ${BILANGA_SMS_SENDER:BILANGA}
+      default-country-code: ${BILANGA_SMS_COUNTRY_CODE:+242}
+      max-length: 320              # au-delà, le SMS est refacturé et arrive découpé
+      connect-timeout-seconds: 3
+      read-timeout-seconds: 10
+      max-attempts: 2
+      headers:
+        # Le nom de l'en-tête varie selon l'opérateur (Authorization, apiKey…) :
+        # il se règle ici, sans toucher au code.
+        Authorization: ${BILANGA_SMS_AUTH_HEADER:}
+
+    # Canal courriel (lot 6.4). Vient APRÈS le SMS, et non avant : le courriel est
+    # le canal évident pour un développeur et le moins utile au champ — il suppose
+    # un forfait données et l'habitude de consulter sa boîte. Un exploitant lit un
+    # SMS dans la minute, un courriel le soir s'il le lit.
+    #
+    # Ce qu'il apporte et que le SMS ne peut pas : la place. Un SMS est tronqué à
+    # 320 caractères ; le motif rédigé par SensorHealthAnalyzer — celui qui dit
+    # QUELLE sonde changer — y entre rarement. C'est le canal du conseiller et du
+    # technicien.
+    #
+    # host vide ⇒ canal indisponible : rien n'est enfilé, aucun échec compté.
+    # Même contrat que le SMS et la météo.
+    email:
+      enabled: ${BILANGA_EMAIL_ENABLED:false}
+      host: ${MAIL_HOST:}
+      port: ${MAIL_PORT:587}
+      username: ${MAIL_USERNAME:}
+      password: ${MAIL_PASSWORD:}
+      from: ${BILANGA_EMAIL_FROM:no-reply@bilanga.cg}
+      # STARTTLS : attendu sur le port 587. Le port 465 attend du TLS implicite,
+      # qui n'est pas géré ici — utilisez 587.
+      start-tls: ${BILANGA_EMAIL_START_TLS:true}
+      connect-timeout-seconds: 5
+      read-timeout-seconds: 10
+
+# ============================================================
+# Réglages transverses et de sécurité — reflètent AppProperties.
+# Aucune de ces clés n'était déclarée : elles n'étaient donc pas modifiables
+# sans recompiler, et le secret JWT avait un repli codé en dur.
+# ============================================================
+app:
+  time-zone: ${APP_TIME_ZONE:Africa/Lagos}
+  admin-access-url: ${APP_ADMIN_ACCESS_URL:http://localhost:3000}
+
+
+  security:
+    jwt:
+      secret: ${APP_JWT_SECRET:}
+      access-token-expiration-ms: ${APP_JWT_ACCESS_EXPIRATION_MS:90000000}
+      refresh-token-expiration-ms: ${APP_JWT_REFRESH_EXPIRATION_MS:604800000}
+      verification-token-expiration-ms: ${APP_JWT_VERIFICATION_EXPIRATION_MS:900000}
+    token-hash:
+      secret: ${TOKEN_HASH_SECRET:}
+    one-time-token:
+      expiration-ms: ${APP_OTT_EXPIRATION_MS:900000}
+    password-reset:
+      expiration-ms: ${APP_PASSWORD_RESET_EXPIRATION_MS:900000}
+    failed-login:
+      max-attempts: ${FAILED_LOGIN_MAX_ATTEMPTS:5}
+
+    # Authentifie une requête sans jeton comme administrateur. Posture de
+    # développement : ConfigurationGuard la signale ici et la refuse en prod.
+    # Son durcissement relève d'un chantier distinct — la valeur est inchangée.
+    auto-admin:
+      enabled: ${AUTO_ADMIN_SECURITY_CONTEXT_ENABLED:true}
+      email: ${AUTO_ADMIN_EMAIL:admin@bilanga.cg}
+
+    # Compte administrateur créé au démarrage s'il n'en existe aucun.
+    #
+    # POURQUOI CE BLOC EXISTE. Après la V24, la base porte 36 permissions, 5 rôles
+    # et leurs liaisons — mais AUCUN utilisateur. Personne ne pouvait donc se
+    # connecter sans appeler d'abord, à la main,
+    # POST /admin/provisioning/bootstrap-admin — à refaire après chaque base neuve.
+    # Son oubli donne un symptôme trompeur : l'auto-admin ne trouve pas son compte,
+    # échoue EN SILENCE, et /admin/** répond 403 sans dire pourquoi.
+    #
+    # ⚠️ L'AMORÇAGE N'A LIEU QU'EN PROFIL « dev ». Le composant qui le porte
+    # (DefaultAdminSeeder) est annoté @Profile("dev") : il n'existe pas ailleurs.
+    # Mettre enabled=true en production ne produirait rien — il n'y a pas de code
+    # pour le faire. C'est délibéré : un mot de passe par défaut dans une migration
+    # Flyway s'appliquerait partout, et son hachage resterait dans le dépôt pour
+    # toujours.
+    #
+    # IDEMPOTENT : si un compte porte déjà le rôle ADMIN, rien ne se produit — et
+    # surtout, un mot de passe que vous auriez changé n'est PAS réinitialisé.
+    #
+    # ⚠️ L'adresse DOIT correspondre à auto-admin.email ci-dessus, sinon les
+    # requêtes sans jeton ne seront pas authentifiées. Le seeder vous avertit au
+    # démarrage si les deux divergent.
+    bootstrap-admin:
+      enabled: ${APP_BOOTSTRAP_ADMIN_ENABLED:true}
+      email: ${APP_BOOTSTRAP_ADMIN_EMAIL:admin@bilanga.cg}
+      password: ${APP_BOOTSTRAP_ADMIN_PASSWORD:Bilanga@Dev2026}
+      firstname: ${APP_BOOTSTRAP_ADMIN_FIRSTNAME:Admin}
+      lastname: ${APP_BOOTSTRAP_ADMIN_LASTNAME:Bilanga}
+
+    # Cloisonnement des données par propriétaire. Inactif tant qu'aucun compte
+    # n'existe en base : l'activer maintenant rendrait l'API inutilisable,
+    # puisque aucune requête ne serait rattachée à un propriétaire.
+    ownership:
+      enabled: ${APP_SECURITY_OWNERSHIP_ENABLED:false}
+
+    # Le permitAll fourre-tout sur /sni/api/v1/**, jusqu'ici CODÉ EN DUR dans
+    # SecurityConfig — et placé AVANT la règle qui délègue à
+    # AdminApiAuthorizationManager. Spring Security retenant la première
+    # correspondance, le gestionnaire n'était jamais consulté : la matrice de
+    # permissions semée par la V24 était écrite et INERTE.
+    #
+    # Il est désormais pilotable. Motif : le fermer n'est tenable qu'une fois un
+    # compte administrateur amorcé ET le frontend émettant son jeton — sinon
+    # plus personne n'entre, y compris pour amorcer ce compte.
+    #
+    # ORDRE DE BASCULE (impact croissant, réversibilité décroissante) :
+    #   1. ownership.enabled            → true
+    #   2. auto-admin.enabled           → false
+    #   3. open-business-routes.enabled → false      ← en dernier
+    # Rejouer le parcours fonctionnel (docs/parcours-fonctionnel.http) après
+    # chaque étape.
+    open-business-routes:
+      enabled: ${APP_SECURITY_OPEN_BUSINESS_ROUTES:true}
+
+    # Origines autorisées, jusqu'ici codées en dur à « * ».
+    # allowCredentials reste false : l'identité passe par un en-tête
+    # Authorization, jamais par un cookie — le navigateur n'a donc rien
+    # d'implicite à joindre, et une page tierce ne peut pas rejouer une session.
+    cors:
+      allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGINS:*}
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      login:
+        max-requests: ${RATE_LIMIT_LOGIN_MAX_REQUESTS:5}
+        window-seconds: ${RATE_LIMIT_LOGIN_WINDOW_SECONDS:60}
+      otp:
+        max-requests: ${RATE_LIMIT_OTP_MAX_REQUESTS:3}
+        window-seconds: ${RATE_LIMIT_OTP_WINDOW_SECONDS:600}
+      callback:
+        max-requests: ${RATE_LIMIT_CALLBACK_MAX_REQUESTS:120}
+        window-seconds: ${RATE_LIMIT_CALLBACK_WINDOW_SECONDS:60}
+      admin:
+        max-requests: ${RATE_LIMIT_ADMIN_MAX_REQUESTS:600}
+        window-seconds: ${RATE_LIMIT_ADMIN_WINDOW_SECONDS:60}
+
+logging:
+  # Le traceId posé par TraceIdFilter figure dans chaque ligne : l'identifiant
+  # renvoyé au client dans ApiError.traceId permet de retrouver la trace.
+  pattern:
+    level: "%5p [${spring.application.name:bilanga},%X{traceId:-}]"
+

@@ -1,0 +1,45 @@
+# ============================================================
+# Profil DEV — poste de développement
+#
+# Objectif : le projet démarre et fonctionne sans qu'on ait à préparer quoi que
+# ce soit, une base PostgreSQL mise à part. Les valeurs ci-dessous sont donc
+# volontairement permissives ET volontairement reconnaissables : aucune ne doit
+# pouvoir se retrouver en production par inadvertance — le profil prod refuse
+# d'ailleurs de démarrer si l'une d'elles y apparaît.
+# ============================================================
+
+bilanga:
+  ingest:
+    # Clé de développement, connue et sans valeur de secret.
+    #
+    # Sans elle, POST /ingest/readings répond 503 et TOUTE la chaîne capteur du
+    # projet est injoignable — c'est l'état dans lequel se trouvait le dépôt :
+    # la clé n'était déclarée nulle part.
+    device-key: ${BILANGA_INGEST_DEVICE_KEY:dev-device-key-change-me}
+
+    # Authentification des boîtiers LEVÉE en développement : le module IoT peut
+    # émettre sans en-tête le temps de l'intégration.
+    # Repasser à true dès que le firmware transmet X-Device-Key.
+    require-device-key: ${BILANGA_INGEST_REQUIRE_DEVICE_KEY:false}
+
+app:
+  # Ajoute exceptionName / debugMessage aux réponses d'erreur. Ces champs nomment
+  # les classes internes et les colonnes : utile ici, jamais ailleurs.
+  dev-mode: true
+  error:
+    verbose: true
+
+  security:
+    # Secrets de développement. Le profil prod refuse ces valeurs exactes.
+    jwt:
+      secret: ${APP_JWT_SECRET:dev-only-jwt-secret-not-for-production-0123456789abcdef}
+    token-hash:
+      secret: ${TOKEN_HASH_SECRET:dev-only-token-hash-secret-not-for-production}
+
+logging:
+  level:
+    com.sni.bilanga: DEBUG
+    # Décommenter ponctuellement pour inspecter la table de routage ; laissé
+    # actif, ce niveau noyait les journaux de démarrage sous des centaines de
+    # lignes — c'était le cas dans le dépôt.
+    # org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping: TRACE

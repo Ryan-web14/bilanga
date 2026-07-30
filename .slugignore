@@ -1,0 +1,20 @@
+# Écarté du slug déployé : rien ici n'est lu à l'exécution.
+#
+# Le slug est reconstruit à chaque déploiement et sa taille pèse sur le temps de
+# démarrage d'un dyno — donc sur le premier appel après une mise en veille.
+#
+# ⚠️ compose.yaml est écarté DÉLIBÉRÉMENT, et pas seulement pour le poids :
+# spring-boot-docker-compose s'active à la présence d'un fichier compose au
+# démarrage. Le buildpack l'exclut normalement de l'archive, mais l'absence du
+# fichier ferme la question plutôt que de dépendre de ce comportement.
+
+docs/
+docker/
+compose.yaml
+init.sql
+HELP.md
+PROJECT_CONTEXT.md
+CLAUDE.md
+.claude/
+.idea/
+src/test/
