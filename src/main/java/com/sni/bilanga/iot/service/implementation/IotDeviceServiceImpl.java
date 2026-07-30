@@ -3,6 +3,8 @@ package com.sni.bilanga.iot.service.implementation;
 
 import com.sni.bilanga.exception.customs.BusinessRuleException;
 import com.sni.bilanga.exception.customs.ResourceNotFoundException;
+import com.sni.bilanga.diagnosis.service.interfaces.AlertService;
+import com.sni.bilanga.farm.model.Plot;
 import com.sni.bilanga.farm.service.interfaces.PlotService;
 import com.sni.bilanga.iot.dto.request.IotDeviceRequest;
 import com.sni.bilanga.iot.dto.response.IotDeviceResponse;
@@ -29,6 +31,12 @@ public class IotDeviceServiceImpl implements IotDeviceService {
     private final IotDeviceRepository iotDeviceRepository;
     private final PlotService plotService;
     private final IotMapper mapper;
+
+    /**
+     * Sert uniquement à refermer une alerte technique restée sur l'ancienne
+     * parcelle quand un boîtier est déplacé — voir {@link #update}.
+     */
+    private final AlertService alertService;
 
     @Override
     @Transactional
@@ -57,14 +65,48 @@ public class IotDeviceServiceImpl implements IotDeviceService {
     public IotDeviceResponse update(Long id, IotDeviceRequest request) {
         IotDevice device = require(id);
 
-        if (request.getPlotId() != null) {
+        // ------------------------------------------------------------
+        // Déplacement d'un boîtier d'une parcelle à une autre.
+        //
+        // Les relevés déjà enregistrés gardent LEUR parcelle : SensorReading la
+        // capture à l'ingestion. C'est le bon comportement — une mesure a été
+        // prise quelque part, et la réécrire falsifierait l'historique des deux
+        // parcelles à la fois.
+        // ------------------------------------------------------------
+        if (request.getPlotId() != null
+                && !request.getPlotId().equals(device.getPlot() == null
+                                               ? null : device.getPlot().getId())) {
+
+            Plot previous = device.getPlot();
             device.setPlot(plotService.require(request.getPlotId()));
+
+            // Les alertes techniques sont indexées par (parcelle, signature). Une
+            // alerte ouverte sur l'ancienne parcelle n'aurait plus jamais été
+            // refermée : la réconciliation cherche sur la parcelle COURANTE du
+            // boîtier, qui vient de changer. Elle serait restée ouverte pour
+            // toujours, à signaler une sonde qui n'est plus là — et le technicien
+            // apprendrait à ignorer une liste qui ne se vide jamais.
+            if (previous != null && device.getTechnicalId() != null) {
+                alertService.raiseTechnical(previous, device.getTechnicalId(),
+                        "Boîtier déplacé vers une autre parcelle.", false);
+            }
         }
-        device.setDeviceName(request.getDeviceName());
-        device.setBatteryLevel(request.getBatteryLevel());
-        device.setBatteryVoltage(request.getBatteryVoltage());
-        device.setFirmwareVersion(request.getFirmwareVersion());
-        device.setInstalledAt(request.getInstalledAt());
+
+        // Mise à jour PARTIELLE : un champ absent n'est plus écrasé.
+        //
+        // Ces cinq champs étaient posés INCONDITIONNELLEMENT. Un client qui
+        // n'envoyait que « plotId » — précisément le geste qu'on fait pour
+        // déplacer un boîtier — effaçait donc son nom, son niveau de batterie, sa
+        // tension, sa version de firmware et sa date d'installation. En silence,
+        // avec un 200.
+        //
+        // C'est le même défaut que celui corrigé sur CropServiceImpl.update(),
+        // et il se manifestait ici sur le cas d'usage le plus courant de la route.
+        if (request.getDeviceName() != null)     device.setDeviceName(request.getDeviceName());
+        if (request.getBatteryLevel() != null)   device.setBatteryLevel(request.getBatteryLevel());
+        if (request.getBatteryVoltage() != null) device.setBatteryVoltage(request.getBatteryVoltage());
+        if (request.getFirmwareVersion() != null) device.setFirmwareVersion(request.getFirmwareVersion());
+        if (request.getInstalledAt() != null)    device.setInstalledAt(request.getInstalledAt());
         // lastSeenAt n'est jamais renseigné par l'API : il constate un fait —
         // le boîtier a parlé — et non une intention d'administration.
         if (request.getStatus() != null) {
