@@ -318,6 +318,54 @@ public class BilangaProperties {
         private double minSeverity = 0.05;
     }
 
+    @Valid private final Arbitration arbitration = new Arbitration();
+
+    /**
+     * Arbitrage des conseils contradictoires.
+     *
+     * <h2>Le défaut corrigé</h2>
+     *
+     * <p>{@code ConflictArbitrator} se déclenchait sur la seule <strong>coprésence de
+     * catégories</strong> : deux conseils de catégories conciliables suffisaient, quelles
+     * que soient les mesures qui les avaient produits.
+     *
+     * <p>Conséquence : une humidité du sol à 58 % quand la culture en demande 60 produit
+     * un conseil de stress hydrique. Combiné à n'importe quel risque sanitaire, il
+     * déclenchait une synthèse rédigée comme si <em>les deux</em> problèmes étaient
+     * sérieux — alors que les capteurs disaient le contraire de l'un des deux.
+     *
+     * <p><strong>Le défaut n'était pas d'ajouter, mais d'ajouter trop tôt.</strong>
+     * L'invariant « on reformule, on n'efface pas » reste entier : rien n'est retiré, on
+     * se contente de ne plus concilier ce qui n'est pas en conflit.
+     */
+    @Data
+    public static class Arbitration {
+
+        /**
+         * Écart minimal, <strong>relatif au seuil</strong>, exigé des deux côtés.
+         *
+         * <p>15 % : en deçà, la mesure est au bord de sa plage et ne constitue pas un
+         * problème dont il vaille la peine de discuter la conciliation avec un autre.
+         * Au-delà de 30 %, les vrais conflits commenceraient à passer inaperçus.
+         *
+         * <p>Relatif et non absolu : un écart de 2 sur un pH est considérable, le même
+         * sur une concentration d'azote est négligeable. C'est le même raisonnement que
+         * celui de {@code SensorHealthAnalyzer}, qui rapporte l'écart à l'étendue observée
+         * plutôt qu'à la valeur brute.
+         */
+        @DecimalMin("0") @DecimalMax("1")
+        private double minDeviation = 0.15;
+
+        /**
+         * À {@code false}, l'arbitrage retrouve son comportement d'avant — coprésence
+         * seule, sans regarder les mesures.
+         *
+         * <p>Prévu comme filet : si le filtrage appauvrit une démonstration, il se lève
+         * par configuration, sans redéploiement ni changement de code.
+         */
+        private boolean requireSignificantDeviation = true;
+    }
+
     /** Analyse de tendance : régression sur une fenêtre récente. */
     @Data
     public static class Trend {

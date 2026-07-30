@@ -53,6 +53,11 @@ public class PropertiesConfig {
     }
 
     @Bean
+    public BilangaProperties.Arbitration arbitrationProperties(BilangaProperties properties) {
+        return properties.getArbitration();
+    }
+
+    @Bean
     public BilangaProperties.Trend trendProperties(BilangaProperties properties) {
         return properties.getTrend();
     }

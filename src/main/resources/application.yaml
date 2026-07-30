@@ -238,6 +238,30 @@ bilanga:
   agronomic:
     min-severity: 0.05
 
+  # Arbitrage des conseils contradictoires.
+  #
+  # LE DÉFAUT CORRIGÉ. Le moteur se déclenchait sur la seule COPRÉSENCE de
+  # catégories, sans jamais regarder les mesures. Une humidité du sol à 58 %
+  # quand la culture en demande 60 produit un conseil de stress hydrique ;
+  # combiné à n'importe quel risque sanitaire, il déclenchait une synthèse
+  # rédigée comme si LES DEUX problèmes étaient sérieux — alors que les capteurs
+  # disaient le contraire de l'un des deux.
+  #
+  # Le défaut n'était pas d'ajouter, mais d'ajouter TROP TÔT. L'invariant « on
+  # reformule, on n'efface pas » reste entier : rien n'est retiré, on se
+  # contente de ne plus concilier ce qui n'est pas en conflit.
+  arbitration:
+    # Écart minimal RELATIF AU SEUIL, exigé des deux côtés. En deçà, la mesure
+    # est au bord de sa plage et ne constitue pas un problème dont il vaille la
+    # peine de discuter la conciliation. Relatif et non absolu : un écart de 2
+    # sur un pH est considérable, le même sur l'azote est négligeable.
+    min-deviation: ${BILANGA_ARBITRATION_MIN_DEVIATION:0.15}
+
+    # false ⇒ retour au comportement d'avant, coprésence seule. Filet prévu :
+    # si le filtrage appauvrit une démonstration, il se lève par configuration,
+    # sans redéploiement.
+    require-significant-deviation: ${BILANGA_ARBITRATION_REQUIRE_DEVIATION:true}
+
   trend:
     window-hours: 6
     min-points: 4
