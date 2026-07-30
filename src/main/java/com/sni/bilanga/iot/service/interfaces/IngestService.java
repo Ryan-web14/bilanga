@@ -15,6 +15,20 @@ public interface IngestService {
     IngestResult ingest(IngestReadingRequest request);
 
     /**
+     * Écrit le relevé dans une transaction <strong>séparée</strong>, validée aussitôt.
+     *
+     * <p>Exposée sur l'interface parce qu'elle doit être appelée à travers le proxy —
+     * une invocation interne court-circuiterait l'intercepteur transactionnel, et la
+     * séparation n'aurait pas lieu. Ce n'est pas une opération métier ; ne l'appelez pas
+     * ailleurs que depuis {@link #ingest}.
+     *
+     * <p>Elle porte l'invariant premier du système : perdre un diagnostic parce qu'un
+     * service tiers est muet est acceptable, perdre une mesure ne l'est pas.
+     */
+    com.sni.bilanga.iot.model.SensorReading persistReading(
+            com.sni.bilanga.iot.model.SensorReading reading);
+
+    /**
      * Rejoue un lot de relevés tamponnés hors ligne.
      *
      * Chaque relevé est traité indépendamment : un échec n'interrompt pas le

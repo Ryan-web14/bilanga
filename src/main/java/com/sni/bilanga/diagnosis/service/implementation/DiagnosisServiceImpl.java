@@ -133,7 +133,43 @@ public class DiagnosisServiceImpl implements DiagnosisService {
     // Chaîne capteurs
     // ============================================================
     @Override
-    @Transactional
+    /**
+     * Transaction <strong>séparée</strong> — et c'est ce qui protège le relevé.
+     *
+     * <h2>Le défaut corrigé, constaté en production le 2026-07-30</h2>
+     *
+     * <p>Cette méthode joignait la transaction de {@code IngestServiceImpl.ingest}. Toute
+     * exception qui en sortait marquait donc la transaction commune
+     * {@code rollback-only} — <em>même rattrapée</em> par l'appelant. {@code ingest}
+     * rendait alors son résultat normalement, avec un {@code skipReason} soigneusement
+     * choisi… puis le commit levait :
+     *
+     * <pre>UnexpectedRollbackException: Transaction silently rolled back
+     * because it has been marked as rollback-only</pre>
+     *
+     * <p><strong>Le relevé était perdu, et l'appelant recevait un 500</strong> — alors
+     * que le journal affichait « Relevé conservé, diagnostic en échec ». La trace disait
+     * le contraire de ce qui se produisait.
+     *
+     * <p><strong>Cela ruinait l'invariant premier du système.</strong> « Le relevé n'est
+     * jamais perdu » est ce qui justifie toute l'architecture de dégradation : une mesure
+     * est irremplaçable, l'instant est passé. Or les trois chemins de dégradation
+     * — {@code ML_INDISPONIBLE}, {@code CONTEXTE_ABSENT}, l'échec générique — passaient
+     * tous par ici. Le filet existait, était soigneusement écrit, et ne retenait rien.
+     *
+     * <p>Le défaut était <strong>latent en développement</strong> : l'auto-admin faisait
+     * passer {@code AccessGuard}, et un microservice d'inférence local ne tombait jamais.
+     * Il n'apparaît que là où ces deux conditions cessent — en production.
+     *
+     * <h2>Pourquoi {@code REQUIRES_NEW} fonctionne ici</h2>
+     *
+     * <p>Le relevé est <strong>déjà commité</strong> quand cette méthode s'exécute
+     * ({@code persistReading} est lui-même en {@code REQUIRES_NEW}), donc la nouvelle
+     * transaction le voit. Son propre échec ne roule en arrière que ses écritures — un
+     * diagnostic à demi écrit ne subsiste pas — et laisse la transaction appelante
+     * intacte.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public DiagnosisResult diagnoseFromSensorReading(Long plotId, String cropName, Long readingId) {
         DiagnosisContext ctx = contextResolver.resolve(plotId, cropName, readingId, true);
 

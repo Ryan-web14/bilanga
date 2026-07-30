@@ -15,6 +15,7 @@ import com.sni.bilanga.exception.customs.ServiceUnavailableException;
 import com.sni.bilanga.enums.EquipmentStatus;
 import com.sni.bilanga.farm.model.Plot;
 import com.sni.bilanga.farm.repository.PlotRepository;
+import com.sni.bilanga.security.access.MachineContext;
 import com.sni.bilanga.iot.dto.request.IngestReadingRequest;
 import com.sni.bilanga.iot.dto.response.IngestResult;
 import com.sni.bilanga.iot.model.IotDevice;
@@ -138,6 +139,23 @@ public class IngestServiceImpl implements IngestService {
                         ErrorCode.DEVICE_NOT_REGISTERED));
     }
 
+    /**
+     * Écrit le relevé, et le <strong>valide sur-le-champ</strong>.
+     *
+     * <p>C'est la traduction technique de l'invariant premier du système : perdre un
+     * diagnostic parce qu'un service tiers est muet est acceptable ; perdre une mesure ne
+     * l'est pas — elle est irremplaçable, l'instant est passé.
+     *
+     * <p>{@code REQUIRES_NEW} suspend la transaction d'ingestion le temps d'écrire. Ce
+     * qui suit — mise à jour du boîtier, verdict de sonde, diagnostic — ne peut donc plus
+     * emporter le relevé en tombant.
+     */
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public SensorReading persistReading(SensorReading reading) {
+        return sensorReadingRepository.save(reading);
+    }
+
     @Override
     @Transactional
     public IngestResult ingest(IngestReadingRequest request) {
@@ -149,7 +167,20 @@ public class IngestServiceImpl implements IngestService {
         SensorReading reading = build(request, device, plot);
         PlausibilityChecker.Verdict verdict = plausibilityChecker.check(reading);
         reading.setAnomalyDetected(verdict.implausible());
-        reading = sensorReadingRepository.save(reading);
+
+        // Le relevé est commité IMMÉDIATEMENT, dans sa propre transaction — c'est le
+        // seul moyen de tenir l'invariant « le relevé n'est jamais perdu ».
+        //
+        // Auparavant il attendait le commit de la transaction d'ingestion. Toute
+        // exception levée plus bas — jusque dans le diagnostic, pourtant rattrapée —
+        // marquait cette transaction rollback-only, et la mesure disparaissait avec
+        // elle. Le journal disait « Relevé conservé » pendant que la base n'en gardait
+        // rien.
+        //
+        // Passer par le proxy (self) et non par un appel direct : une invocation
+        // interne court-circuite l'intercepteur transactionnel, et REQUIRES_NEW n'aurait
+        // aucun effet — c'est le piège classique de l'AOP par proxy.
+        reading = self.getObject().persistReading(reading);
 
         touch(device, request);
 
@@ -362,8 +393,13 @@ public class IngestServiceImpl implements IngestService {
 
         try {
             // La culture est déduite de la culture en cours sur la parcelle.
-            DiagnosisResult diagnosis =
-                    diagnosisService.diagnoseFromSensorReading(plotId, null, reading.getId());
+            //
+            // asDevice : le diagnostic traverse AccessGuard, qui exigeait un utilisateur
+            // authentifié. L'ingestion n'en a pas — elle s'authentifie par clé partagée —
+            // et TOUS les diagnostics capteur échouaient donc en production dès que le
+            // cloisonnement était actif.
+            DiagnosisResult diagnosis = MachineContext.asDevice(() ->
+                    diagnosisService.diagnoseFromSensorReading(plotId, null, reading.getId()));
 
             return result
                     .diagnosed(true)

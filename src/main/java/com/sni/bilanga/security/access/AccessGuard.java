@@ -110,7 +110,14 @@ public class AccessGuard {
      * couvre donc l'ensemble.
      */
     public void requireAccess(Plot plot) {
-        if (!isEnabled() || isPrivileged() || plot == null) {
+        // Un appareil authentifié par clé partagée n'a PAS d'utilisateur, et ne peut
+        // pas en avoir : un microcontrôleur ne gère pas de cycle de vie de jeton.
+        // Sans cette exception, la chaîne capteur entière était refusée en production
+        // — le relevé arrivait, et le diagnostic échouait en ForbiddenException.
+        //
+        // Ce que cela n'ouvre pas : la clé reste exigée en amont, et l'appareil ne
+        // choisit pas sa parcelle — elle se déduit de son identité matérielle.
+        if (!isEnabled() || MachineContext.isDevice() || isPrivileged() || plot == null) {
             return;
         }
 
