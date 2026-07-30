@@ -36,9 +36,26 @@ spring:
       connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:200ms}
 
 app:
-  dev-mode: false
+  # ⚠️ SURCHARGEABLES DEPUIS L'ENVIRONNEMENT — et c'est ce qui permet de
+  # diagnostiquer un 500 en production SANS redéployer.
+  #
+  # Ces deux drapeaux étaient codés en dur. Conséquence : une 500 rendait
+  # « An unexpected error occurred », sans nom d'exception ni message — donc rien
+  # à chercher. Il fallait `heroku logs` (l'incident peut avoir défilé) ou un
+  # redéploiement pour ajouter une trace, ce qui prend plusieurs minutes et
+  # relance le dyno, effaçant l'état qu'on voulait observer.
+  #
+  # À true, ApiError porte en plus `exceptionName`, `debugMessage` et `path` :
+  #   heroku config:set APP_DEV_MODE=true APP_ERROR_VERBOSE=true
+  #   … rejouer l'appel fautif, lire la réponse …
+  #   heroku config:unset APP_DEV_MODE APP_ERROR_VERBOSE
+  #
+  # ⚠️ À REFERMER après le diagnostic : le nom des classes et les messages
+  # d'exception renseignent sur la structure interne. Sans conséquence sur des
+  # données de démonstration, à ne pas laisser ouvert au-delà.
+  dev-mode: ${APP_DEV_MODE:false}
   error:
-    verbose: false
+    verbose: ${APP_ERROR_VERBOSE:false}
 
   security:
     # En production, aucune route métier n'est ouverte par défaut : chaque appel

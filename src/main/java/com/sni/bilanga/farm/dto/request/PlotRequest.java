@@ -57,7 +57,28 @@ public class PlotRequest {
 
     private PlotStatus status;
 
+    /**
+     * Propriétaire. <strong>Omis à la création, la parcelle revient à l'appelant.</strong>
+     *
+     * <p>Attend la clé technique — le champ {@code id} de {@code GET /auth/me}, et non le
+     * code lisible {@code userId} de la même réponse. Les deux sortent en chaînes, ce qui
+     * ne permet pas de les distinguer à l'œil ; le repli sur l'appelant supprime la
+     * question dans le cas courant.
+     */
     private Long userId;
+
+    /**
+     * Champs à <strong>vider</strong> explicitement.
+     *
+     * <p>La mise à jour est partielle : un champ absent n'est plus écrasé. Sans ce
+     * mécanisme, certains champs deviendraient indélébiles — on aurait troqué une perte
+     * silencieuse contre une donnée qu'on ne peut plus retirer.
+     *
+     * <p>Accepte : {@code location}, {@code latitude}, {@code longitude}, {@code altitude},
+     * {@code soilType}, {@code irrigationType}, {@code area}, {@code farmId},
+     * {@code userId}. Un nom inconnu est refusé en 400, jamais ignoré.
+     */
+    private java.util.List<String> clearFields;
 
     /**
      * Exploitation de rattachement — <strong>facultative</strong>.

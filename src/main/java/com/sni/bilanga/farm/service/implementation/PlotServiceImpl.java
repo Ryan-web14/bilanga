@@ -78,14 +78,30 @@ public class PlotServiceImpl implements PlotService {
     public PlotResponse update(Long id, PlotRequest request) {
         Plot plot = require(id);
 
-        plot.setName(request.getName());
-        plot.setLocation(request.getLocation());
-        plot.setLatitude(request.getLatitude());
-        plot.setLongitude(request.getLongitude());
-        plot.setAltitude(request.getAltitude());
-        plot.setSoilType(DomainEnums.nameOf(request.getSoilType()));
-        plot.setIrrigationType(DomainEnums.nameOf(request.getIrrigationType()));
-        plot.setArea(request.getArea());
+        // Mise à jour PARTIELLE : un champ absent n'est plus écrasé.
+        //
+        // Ces huit champs étaient posés INCONDITIONNELLEMENT. Rattacher une parcelle à
+        // une exploitation, ou corriger son seul nom, effaçait donc ses coordonnées, son
+        // type de sol, son mode d'irrigation et sa superficie. En silence, avec un 200.
+        //
+        // Les conséquences n'étaient pas cosmétiques. Sans latitude ni longitude, la
+        // météo et le voisinage cessent de produire le moindre conseil — deux moteurs
+        // sur huit s'éteignent sans que rien ne le signale. Sans irrigationType,
+        // IrrigationAdapter ne reformule plus : « null n'est pas PLUVIAL », et une
+        // parcelle sans eau à la demande se remet à recevoir des « irriguez ».
+        //
+        // Même défaut que sur CropServiceImpl.update() et IotDeviceServiceImpl.update(),
+        // corrigés de la même façon. C'était le dernier des trois.
+        if (request.getName() != null)     plot.setName(request.getName());
+        if (request.getLocation() != null) plot.setLocation(request.getLocation());
+        if (request.getLatitude() != null) plot.setLatitude(request.getLatitude());
+        if (request.getLongitude() != null) plot.setLongitude(request.getLongitude());
+        if (request.getAltitude() != null) plot.setAltitude(request.getAltitude());
+        if (request.getSoilType() != null) plot.setSoilType(DomainEnums.nameOf(request.getSoilType()));
+        if (request.getIrrigationType() != null) {
+            plot.setIrrigationType(DomainEnums.nameOf(request.getIrrigationType()));
+        }
+        if (request.getArea() != null)     plot.setArea(request.getArea());
         // plotCode n'est pas modifiable : une référence déjà communiquée au
         // terrain ne doit pas changer de sens sous les pieds de l'exploitant.
         if (plot.getPlotCode() == null) {
@@ -97,10 +113,19 @@ public class PlotServiceImpl implements PlotService {
         if (request.getUserId() != null) {
             plot.setUser(resolveUser(request.getUserId()));
         }
-        // Le rattachement se modifie librement, y compris pour être retiré :
-        // une parcelle sortie d'une exploitation redevient simplement celle de
-        // son propriétaire, sans que rien d'autre ne change.
-        plot.setFarm(resolveFarm(request.getFarmId()));
+        if (request.getFarmId() != null) {
+            plot.setFarm(resolveFarm(request.getFarmId()));
+        }
+
+        // Effacer se demande désormais EXPLICITEMENT.
+        //
+        // Sans ce mécanisme, la sémantique partielle ci-dessus aurait rendu certains
+        // champs indélébiles — on aurait troqué une perte silencieuse contre une donnée
+        // qu'on ne peut plus retirer. Le détachement d'une exploitation, en particulier,
+        // doit rester possible : une parcelle sortie d'une exploitation redevient
+        // simplement celle de son propriétaire, sans que rien d'autre ne change.
+        applyClearFields(plot, request.getClearFields());
+
         plot.setUpdatedAt(Instant.now());
 
         return plotMapper.toResponse(plotRepository.save(plot));
@@ -157,6 +182,48 @@ public class PlotServiceImpl implements PlotService {
         // endroit couvre l'ensemble sans disperser la règle.
         accessGuard.requireAccess(plot);
         return plot;
+    }
+
+    /**
+     * Champs effaçables, et l'action qui les vide.
+     *
+     * <p>{@code name} n'y figure pas : il est obligatoire. {@code status} non plus — il
+     * se pilote par {@code DELETE}, et le vider laisserait une parcelle sans état.
+     */
+    private static final java.util.Map<String, java.util.function.Consumer<Plot>> CLEARABLE =
+            java.util.Map.of(
+                    "location", plot -> plot.setLocation(null),
+                    "latitude", plot -> plot.setLatitude(null),
+                    "longitude", plot -> plot.setLongitude(null),
+                    "altitude", plot -> plot.setAltitude(null),
+                    "soilType", plot -> plot.setSoilType(null),
+                    "irrigationType", plot -> plot.setIrrigationType(null),
+                    "area", plot -> plot.setArea(null),
+                    "farmId", plot -> plot.setFarm(null),
+                    "userId", plot -> plot.setUser(null));
+
+    /**
+     * Applique les effacements demandés.
+     *
+     * <p>Un nom inconnu est <strong>refusé</strong>, jamais ignoré : un effacement qui
+     * n'a pas lieu et ne le dit pas serait exactement le défaut qu'on vient de corriger,
+     * en sens inverse.
+     */
+    private void applyClearFields(Plot plot, List<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return;
+        }
+        for (String raw : fields) {
+            String field = raw == null ? "" : raw.trim();
+            java.util.function.Consumer<Plot> clear = CLEARABLE.get(field);
+
+            if (clear == null) {
+                throw new com.sni.bilanga.exception.customs.BusinessRuleException(
+                        "Champ non effaçable : « " + raw + " ». Champs acceptés : "
+                                + String.join(", ", new java.util.TreeSet<>(CLEARABLE.keySet())) + ".");
+            }
+            clear.accept(plot);
+        }
     }
 
     /**
