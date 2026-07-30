@@ -13,6 +13,8 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import tools.jackson.databind.exc.InvalidFormatException;
+import tools.jackson.databind.exc.MismatchedInputException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.validation.FieldError;
@@ -330,6 +332,24 @@ public class GlobalExceptionHandler {
         };
     }
 
+    /**
+     * Décrit ce qui, dans le corps, n'a pas pu être lu.
+     *
+     * <h2>Le défaut corrigé</h2>
+     *
+     * <p>Ce gestionnaire ne traitait que le cas de l'énumération et renvoyait sinon
+     * « Request body is missing or malformed. » — techniquement exact, et sans aucune
+     * valeur pour l'appelant : ni le champ fautif, ni la valeur reçue, ni le type attendu.
+     *
+     * <p>C'est le message que reçoit quiconque met un identifiant lisible là où le champ
+     * attend un identifiant numérique — {@code "userId": "USR-300726-82U3GVS3"} au lieu de
+     * {@code "userId": "1934…"}. Or c'est une confusion prévisible : l'API expose les deux,
+     * les routes d'administration s'adressent par {@code userCode}, et tous les
+     * identifiants sortent en <em>chaînes</em>, ce qui efface le seul indice visuel.
+     *
+     * <p>Nommer le champ transforme un quart d'heure de tâtonnement en une correction
+     * immédiate.
+     */
     private String describeUnreadableBody(HttpMessageNotReadableException ex) {
         Throwable cause = ex.getMostSpecificCause();
         String detail = cause == null ? null : cause.getMessage();
@@ -340,7 +360,78 @@ public class GlobalExceptionHandler {
                 return "Valeur non reconnue. Valeurs acceptées : " + matcher.group(1) + ".";
             }
         }
+
+        // Type incompatible : Jackson connaît le chemin exact du champ et la valeur reçue.
+        // Les taire revenait à jeter la seule information utile de l'exception.
+        if (cause instanceof InvalidFormatException invalid) {
+            String field = pathOf(invalid);
+            String expected = simpleTypeName(invalid.getTargetType());
+
+            if (field != null) {
+                return String.format(
+                        "Le champ « %s » a reçu la valeur %s, qui n'est pas un %s valide.",
+                        field, quoted(invalid.getValue()), expected);
+            }
+            return "Une valeur du corps n'a pas le type attendu (" + expected + ").";
+        }
+
+        // Champ absent, tableau là où un objet est attendu, JSON tronqué…
+        if (cause instanceof MismatchedInputException mismatched) {
+            String field = pathOf(mismatched);
+            if (field != null) {
+                return "Le champ « " + field + " » n'a pas la forme attendue.";
+            }
+        }
+
         return "Request body is missing or malformed.";
+    }
+
+    /** Chemin pointé du champ fautif — {@code plot.userId} plutôt que {@code userId}. */
+    private String pathOf(MismatchedInputException ex) {
+        if (ex.getPath() == null || ex.getPath().isEmpty()) {
+            return null;
+        }
+        StringBuilder path = new StringBuilder();
+        ex.getPath().forEach(reference -> {
+            if (reference.getPropertyName() != null) {
+                if (!path.isEmpty()) path.append('.');
+                path.append(reference.getPropertyName());
+            } else if (reference.getIndex() >= 0) {
+                path.append('[').append(reference.getIndex()).append(']');
+            }
+        });
+        return path.isEmpty() ? null : path.toString();
+    }
+
+    /**
+     * {@code Long} plutôt que {@code java.lang.Long} — et « nombre entier » plutôt que
+     * {@code Long}, parce que le message s'adresse à quelqu'un qui écrit du JSON, pas du
+     * Java.
+     */
+    private String simpleTypeName(Class<?> type) {
+        if (type == null) {
+            return "type attendu";
+        }
+        return switch (type.getSimpleName()) {
+            case "Long", "Integer", "int", "long", "Short", "BigInteger" -> "nombre entier";
+            case "Double", "Float", "double", "float", "BigDecimal" -> "nombre";
+            case "Boolean", "boolean" -> "booléen";
+            case "Instant", "LocalDateTime", "OffsetDateTime" -> "horodatage ISO-8601";
+            case "LocalDate" -> "date au format yyyy-MM-dd";
+            default -> type.getSimpleName();
+        };
+    }
+
+    /** Tronquée : une valeur fautive de dix kilo-octets n'aide personne. */
+    private String quoted(Object value) {
+        if (value == null) {
+            return "nulle";
+        }
+        String text = String.valueOf(value);
+        if (text.length() > 60) {
+            text = text.substring(0, 60) + "…";
+        }
+        return "« " + text + " »";
     }
 
     private List<String> enumNames(Class<?> type) {

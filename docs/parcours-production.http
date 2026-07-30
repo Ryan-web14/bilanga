@@ -31,8 +31,8 @@
 @deviceKey = bilanga-demo-device-key-soutenance-2026
 
 ### À remplir depuis les réponses, au fil du parcours
-@token =
-@adminUserId =
+@token =eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJhZG1pbkBiaWxhbmdhLmNnIiwic2Vzc2lvbklkIjoiY2ViYTc2ZTEtOTU0NC00YWJjLTkxNDgtZDhhODQ1MWFiNTc5IiwidHlwZSI6ImFjY2VzcyIsInJvbGVzIjpbIlJPTEVfQURNSU4iLCJGQVJNOlJFQUQiLCJJT1Q6Q1JFQVRFIiwiSU9UOlJFQUQiLCJGQVJNOkNSRUFURSIsIk9WRVJWSUVXOlJFQUQiLCJESUFHTk9TSVM6Q1JFQVRFIiwiRElBR05PU0lTOkRFTEVURSIsIkZBUk06REVMRVRFIiwiSU5URVJWRU5USU9OOlJFQUQiLCJIQVJWRVNUOkNSRUFURSIsIklOVEVSVkVOVElPTjpERUxFVEUiLCJTWVNURU06QVVESVQiLCJLTk9XTEVER0U6Q1JFQVRFIiwiU1lTVEVNOk5PVElGSUNBVElPTlMiLCJTWVNURU06Uk9MRVMiLCJLTk9XTEVER0U6REVMRVRFIiwiRElBR05PU0lTOlJFQUQiLCJIQVJWRVNUOlVQREFURSIsIlNZU1RFTTpQRVJNSVNTSU9OUyIsIkhBUlZFU1Q6REVMRVRFIiwiSU5URVJWRU5USU9OOlVQREFURSIsIklOVEVSVkVOVElPTjpDUkVBVEUiLCJESUFHTk9TSVM6VVBEQVRFIiwiSEFSVkVTVDpSRUFEIiwiT1JHQU5JWkFUSU9OOlJFQUQiLCJGQVJNOlVQREFURSIsIktOT1dMRURHRTpVUERBVEUiLCJBRE1JTjpBQ0NFU1MiLCJJT1Q6REVMRVRFIiwiU1lTVEVNOlNFVFRJTkdTIiwiU1lTVEVNOlVTRVJTIiwiSU9UOlVQREFURSIsIk9SR0FOSVpBVElPTjpERUxFVEUiLCJLTk9XTEVER0U6UkVBRCIsIk9SR0FOSVpBVElPTjpVUERBVEUiLCJPUkdBTklaQVRJT046Q1JFQVRFIl0sImlhdCI6MTc4NTQzNzMxMCwiZXhwIjoxNzg1NTI3MzEwfQ.isiqocOd6rPuF8P9BR_1xFYRM1PJmHFcgqSFB9yIdi4yNUYFcp7MDPFN1YhAZi-ag_OIjsz1U3bvSvUeoPbHaw
+@adminUserId =USR-300726-82U3GVS3
 @plotId =
 @cropId =
 @deviceId =
@@ -140,7 +140,20 @@ Content-Type: application/json
 ### 2.2 — Vérifier le jeton et les droits
 ### ATTENDU : 200. authorities contient ROLE_ADMIN et les 36 permissions
 ### (SYSTEM:USERS, FARM:*, IOT:*, DIAGNOSIS:*, KNOWLEDGE:*, HARVEST:*…).
-### ⭐ Recopiez userId dans @adminUserId.
+###
+### ⚠️ DEUX IDENTIFIANTS, ET ILS NE VONT PAS AU MÊME ENDROIT :
+###
+###   "id"     : "1934567890123456789"   ← clé technique. C'est CELLE-CI qu'attendent
+###                                        les champs …Id des CORPS de requête
+###                                        (plots.userId, alerts.assignedToUserId…)
+###   "userId" : "USR-300726-82U3GVS3"   ← référence lisible. Employée dans les
+###                                        CHEMINS : /admin/users/{userCode}
+###
+### Comme tous les identifiants sortent en chaînes, rien ne les distingue à l'œil.
+### Recopier « userId » dans un corps donne un 400 — le message nomme désormais le
+### champ fautif au lieu de dire « missing or malformed ».
+###
+### ⭐ Recopiez "id" (le numérique) dans @adminUserId.
 GET {{api}}/auth/me
 Authorization: Bearer {{token}}
 
@@ -178,9 +191,15 @@ Content-Type: application/json
   "soilType": "ARGILEUX",
   "irrigationType": "PLUVIAL",
   "area": 1.5,
-  "status": "ACTIVE",
-  "userId": "{{adminUserId}}"
+  "status": "ACTIVE"
 }
+
+### ⭐ « userId » est VOLONTAIREMENT ABSENT. La parcelle revient à l'appelant
+###   authentifié — celui qui crée une parcelle en est le propriétaire, c'est le
+###   cas normal, et l'exiger était à la fois redondant et piégeux.
+###
+###   Pour attribuer la parcelle à QUELQU'UN D'AUTRE, ajoutez « "userId": "…" »
+###   avec le champ « id » de /auth/me — le NUMÉRIQUE, jamais le code USR-….
 
 ### 3.2 — Déclarer une campagne DÉJÀ AVANCÉE
 ### ATTENDU : 201.

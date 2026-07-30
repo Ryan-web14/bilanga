@@ -151,6 +151,10 @@ public class   AuthenticationServiceImpl implements AuthenticationService {
             throw new BadCredentialException("User is not authenticated");
         }
         return CurrentUserResponse.builder()
+                // La clé technique, celle qu'attendent les champs …Id des corps de
+                // requête. Elle manquait : le client ne disposait que du code lisible,
+                // dont le nom « userId » laissait croire qu'il allait dans plots.userId.
+                .id(principal.getUser().getId())
                 .userId(principal.getUser().getUserId())
                 .email(principal.getUser().getEmail())
                 .accountEnabled(Boolean.TRUE.equals(principal.getUser().getIsAccountEnabled()))

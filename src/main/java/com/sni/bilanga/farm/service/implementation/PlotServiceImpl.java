@@ -2,6 +2,7 @@ package com.sni.bilanga.farm.service.implementation;
 
 
 import com.sni.bilanga.enums.DomainEnums;
+import com.sni.bilanga.utils.constant.SystemActors;
 import com.sni.bilanga.enums.PlotStatus;
 import com.sni.bilanga.enums.SoilType;
 import com.sni.bilanga.exception.customs.ResourceNotFoundException;
@@ -44,6 +45,9 @@ public class PlotServiceImpl implements PlotService {
     private final PlotMapper plotMapper;
     private final PlotCodeGenerator plotCodeGenerator;
     private final AccessGuard accessGuard;
+
+    /** Sert à attribuer la parcelle à son créateur quand aucun propriétaire n'est désigné. */
+    private final com.sni.bilanga.audit.context.SecurityAuditContextProvider actorProvider;
 
     @Override
     @Transactional
@@ -155,10 +159,39 @@ public class PlotServiceImpl implements PlotService {
         return plot;
     }
 
+    /**
+     * Propriétaire de la parcelle : celui qu'on désigne, ou <strong>l'appelant</strong>.
+     *
+     * <h2>Pourquoi le repli sur l'appelant</h2>
+     *
+     * <p>Exiger que le client transmette son propre identifiant était à la fois redondant
+     * et piégeux. {@code Users} porte <strong>deux</strong> identifiants — {@code id}, le
+     * Snowflake numérique, et {@code userId}, le code lisible {@code USR-300726-…} — et
+     * {@code GET /auth/me} rend le second sous le nom {@code userId}. Le champ
+     * {@code PlotRequest.userId}, lui, attend le premier.
+     *
+     * <p>Même nom, contenus incompatibles : recopier ce que l'API vient de rendre
+     * produisait un 400. Le repli supprime la question — celui qui crée une parcelle en
+     * est le propriétaire, c'est le cas normal.
+     *
+     * <h2>Ce que le repli évite en plus</h2>
+     *
+     * <p>Une parcelle sans propriétaire n'est visible que d'un compte privilégié une fois
+     * {@code ownership.enabled} actif. Un exploitant pouvait donc créer une parcelle et
+     * ne plus la voir — un piège silencieux, et le plus déroutant qui soit.
+     *
+     * <p>Rendre {@code null} reste possible : il faut alors qu'aucun appelant ne soit
+     * authentifié, ce qui n'arrive qu'à l'ingestion, où aucune parcelle n'est créée.
+     */
     private Users resolveUser(Long userId) {
-        if (userId == null) return null;
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable : " + userId));
+        Long target = userId != null ? userId : actorProvider.userIdOrNull();
+
+        if (target == null || SystemActors.SYSTEM_USER_ID.equals(target)) {
+            return null;
+        }
+        return userRepository.findById(target)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Utilisateur introuvable : " + target));
     }
 
     /** Nulle est une réponse valable : la parcelle n'appartient alors à aucune exploitation. */
