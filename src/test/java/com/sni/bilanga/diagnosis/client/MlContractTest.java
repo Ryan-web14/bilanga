@@ -37,17 +37,53 @@ class MlContractTest {
     @Test
     @DisplayName("un champ INCONNU ne fait pas échouer la lecture d'une prédiction de sol")
     void unknownFieldsAreTolerated() {
-        // Relevé tel quel sur le service déployé.
+        // Relevé tel quel sur le service déployé le 2026-07-30, APRÈS correction :
+        // trois champs que SoilPrediction ne déclare pas, dont deux ajoutés depuis
+        // le premier relevé. C'est précisément ce que ce test protège — le service
+        // évolue dans un autre dépôt, et rien ne relie les deux à la compilation.
         String body = """
-                {"category":"STRESS_HYDRIQUE","confidence":0.6852042452444562,
+                {"category":"STRESS_HYDRIQUE","confidence":0.5824236084577877,
                  "allProbabilities":{"NORMAL":0.14013554447431523,
-                                     "STRESS_HYDRIQUE":0.6852042452444562}}
+                                     "STRESS_HYDRIQUE":0.6852042452444562},
+                 "imputedFeatures":["type_sol"],
+                 "outOfRangeFeatures":["luminosite"]}
                 """;
 
         SoilPrediction prediction = mapper.readValue(body, SoilPrediction.class);
 
         assertThat(prediction.getCategory()).isEqualTo("STRESS_HYDRIQUE");
-        assertThat(prediction.getConfidence()).isEqualTo(0.6852042452444562);
+        assertThat(prediction.getConfidence()).isEqualTo(0.5824236084577877);
+    }
+
+    /**
+     * La dégradation de confiance, vue depuis le backend.
+     *
+     * <p>Le service rend une confiance <strong>déjà pénalisée</strong> par le nombre de
+     * mesures imputées : {@code allProbabilities} porte la probabilité brute du modèle,
+     * {@code confidence} la valeur retenue. Le backend ne lit que la seconde — et c'est
+     * elle qui décide de {@code reliable}, donc de la levée d'une alerte.
+     *
+     * <p>Relevé réel : cinq mesures absentes sur huit ⇒ 0,4515 brut × 0,4 (le plancher)
+     * = 0,1806. Sous le seuil de 0,60, {@code ConfidenceEvaluator} marque le diagnostic
+     * non fiable et <strong>aucune alerte n'est levée</strong>. C'est le comportement
+     * voulu : ne rien conseiller plutôt que conseiller sur des chiffres fabriqués.
+     */
+    @Test
+    @DisplayName("une confiance dégradée par l'imputation passe sous le seuil de fiabilité")
+    void degradedConfidenceIsReadAsIs() {
+        String body = """
+                {"category":"CARENCES_NUTRITIVES","confidence":0.18060399186665455,
+                 "allProbabilities":{"CARENCES_NUTRITIVES":0.45150997966663636},
+                 "imputedFeatures":["humidite_sol","humidite_air","azote",
+                                    "phosphore","luminosite"]}
+                """;
+
+        SoilPrediction prediction = mapper.readValue(body, SoilPrediction.class);
+
+        assertThat(prediction.getConfidence())
+                .as("la valeur pénalisée, et non la probabilité brute du modèle")
+                .isEqualTo(0.18060399186665455)
+                .isLessThan(0.60);
     }
 
     @Test

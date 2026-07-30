@@ -2,22 +2,71 @@
 
 ---
 
-## ⚠️ Constats sur le service DÉPLOYÉ — 2026-07-30
+## ✅ Contrat vérifié — 2026-07-30, **après correction**
 
-> Relevés en interrogeant `https://bilanga-ml-587151bad5cb.herokuapp.com`, pas en lisant du
-> code. **Le service est en ligne et répond**, les modèles TFLite sont chargés, et le
-> contrat de réponse est bon.
->
-> **Mais dans son état actuel il ne peut servir aucun diagnostic capteur réel.** Deux
-> défauts, tous deux dans la requête, tous deux corrigeables côté Python seulement.
+> Relevé en interrogeant `https://bilanga-ml-587151bad5cb.herokuapp.com`, pas en lisant du
+> code. **Les cinq défauts constatés le matin sont corrigés.** Le service répond sur tous
+> les cas que le backend peut réellement produire.
 
-| Test | Résultat |
+| Cas | Avant | Après |
+|---|:-:|:-:|
+| `type_sol: "ARGILEUX"` — ce que Java envoie **toujours** | 🔴 400 | ✅ **200** |
+| cinq mesures numériques à `null` | 🔴 422 | ✅ **200** |
+| `type_sol: null` — parcelle sans sol déclaré | 🔴 422 | ✅ **200** |
+| `culture: "TOMATE"` | 🔴 400 | ✅ **200** |
+| trois clés V16 en plus | ✅ 200 | ✅ **200** |
+| `/predict/vision-b64` · tomate **et** manioc | ✅ | ✅ **200 en ~1,3 s** |
+
+### La dégradation de confiance fonctionne — c'est le point qui compte
+
+| Mesures imputées | Probabilité brute | `confidence` rendue | Lecture côté Java |
+|:-:|:-:|:-:|---|
+| 0 | 0,6852 | **0,6852** | fiable — une alerte peut être levée |
+| 1 (`type_sol`) | 0,6852 | **0,5824** | sous 0,60 ⇒ **non fiable** |
+| 5 sur 8 | 0,4515 | **0,1806** | plancher à 0,4 × brut — franchement non fiable |
+
+`allProbabilities` porte la probabilité **brute** du modèle, `confidence` la valeur
+**retenue**. Le backend ne lit que la seconde, et c'est elle qui décide de `reliable`,
+donc de la levée d'une alerte.
+
+> **Une seule valeur imputée suffit à faire basculer sous le seuil** (0,6852 → 0,5824).
+> C'est sévère, et défendable : le système préfère se taire plutôt qu'alerter sur une
+> mesure qu'il a fabriquée. À surveiller néanmoins — si trop de diagnostics légitimes
+> deviennent non fiables faute d'une seule sonde, c'est le coefficient de 0,15 qu'il faut
+> revoir, **pas le seuil côté Java**.
+
+### 🟡 Un point resté ouvert : `outOfRangeFeatures`
+
+Le service signale désormais les mesures hors de la plage d'entraînement
+(`outOfRangeFeatures: ["luminosite"]` sur une luminosité de 21 000). **Ce signalement ne
+dégrade pas la confiance** — vérifié : sans imputation, `confidence` reste égale à la
+probabilité brute.
+
+C'est une décision à prendre, pas un défaut. Une valeur hors plage n'est pas une valeur
+absente : le modèle a vu une mesure **réelle**, il l'extrapole simplement au-delà de ce
+qu'il a appris. La pénaliser serait cohérent ; ne pas le faire l'est aussi, tant que
+l'information remonte. À trancher si les extrapolations s'avèrent fausses en pratique.
+
+### 🔴 Ce qui reste à faire, et qui n'est pas dans le fichier Python
+
+**`BILANGA_ML_BASE_URL` sans barre finale.**
+
+```bash
+heroku config:set BILANGA_ML_BASE_URL=https://bilanga-ml-587151bad5cb.herokuapp.com
+```
+
+---
+
+## Historique — les cinq défauts, et pourquoi ils comptaient
+
+> Conservé parce que les raisons expliquent le correctif.
+
+| Test | Résultat du matin |
 |---|---|
-| `GET /health` | ✅ 200 · `visionModels: [manioc, tomate]` · `soilLoaded: true` |
-| `POST /predict/vision-b64` | ✅ 200 en 1,3 s · `diseaseClass` en camelCase · noms de classes bruts |
-| `POST /predict/soil`, `type_sol: "argileux"` | ✅ 200 · `{category, confidence, allProbabilities}` |
 | `POST /predict/soil`, `type_sol: "ARGILEUX"` | 🔴 **400** — *Valeur inconnue pour 'type_sol'* |
 | `POST /predict/soil`, mesures à `null` | 🔴 **422** — *Input should be a valid number* |
+| `POST /predict/soil`, `type_sol: null` | 🔴 **422** |
+| `POST /predict/soil`, `culture: "TOMATE"` | 🔴 **400** |
 | URL avec `/` final ⇒ `//predict/soil` | 🔴 **404** |
 
 ### 🔴 1. `type_sol` — le service attend des minuscules, Java envoie des MAJUSCULES
