@@ -20,7 +20,8 @@ de conception**.
 |---|---|
 | ✅ Ajouté | `Procfile`, `system.properties`, `.slugignore`, liaison sur `$PORT` |
 | ✅ Vérifié | le jar se construit et ne contient **ni** devtools **ni** docker-compose |
-| 🔴 **Bloquant** | **aucun compte ne peut être créé** sur une base de production neuve (§4) |
+| ✅ Corrigé | l'amorçage du premier compte, qui était **impossible** en production (§4) |
+| ✅ Corrigé | les secrets bloquants, désormais pourvus de valeurs par défaut ⚠️ **publiques** (§3.2) |
 | 🟠 À vérifier | Java 25 accepté par le buildpack (§2) |
 | 🟠 À décider | **deux applications Heroku** — le microservice Python est un déploiement à part entière (§5) |
 | 🟠 À faire | `.env` est dans l'index git — à retirer **avant le premier commit** (§7) |
@@ -119,28 +120,58 @@ ordre de préférence :
 > buildpack Java expose en plus les trois `JDBC_DATABASE_*`, et c'est celles-là que
 > `application.yaml` lit **en premier**. Rien à convertir.
 
-### 3.2 Obligatoires — le démarrage est **refusé** sans elles
+### 3.2 Secrets — des valeurs par défaut existent désormais
 
-`ConfigurationGuard` lève une `IllegalStateException` en profil `prod`.
+> **Changement du 2026-07-30.** Ces quatre réglages **bloquaient le démarrage** quand ils
+> manquaient. Ils portent maintenant des valeurs par défaut, et `ConfigurationGuard` se
+> contente d'un avertissement appuyé. Motif : un déploiement de soutenance doit démarrer
+> sans configuration préalable.
 
-| Variable | Contrainte | Pourquoi |
+| Variable | Défaut | Ce que le défaut coûte |
 |---|---|---|
-| `SPRING_PROFILES_ACTIVE` | `prod` | sans elle, le profil `dev` s'applique : auto-admin actif, routes métier ouvertes, CORS `*` |
-| `APP_JWT_SECRET` | ≥ 32 caractères, ≠ valeur de dev | un secret court ou connu rend tout jeton forgeable |
-| `TOKEN_HASH_SECRET` | idem | protège les jetons de rafraîchissement stockés |
-| `APP_CORS_ALLOWED_ORIGINS` | liste explicite, **jamais `*`** | aucun défaut en prod : l'oubli fait échouer le démarrage plutôt que d'ouvrir l'API |
-| `BILANGA_INGEST_DEVICE_KEY` | non vide, ≠ valeur de dev | sinon l'ingestion répond 503 et la chaîne capteur est morte |
+| `APP_JWT_SECRET` | valeur de démonstration | **publique** — quiconque lit le dépôt peut forger un jeton pour n'importe quel compte, administrateur compris |
+| `TOKEN_HASH_SECRET` | valeur de démonstration | idem pour les jetons de rafraîchissement stockés |
+| `BILANGA_INGEST_DEVICE_KEY` | valeur de démonstration | quiconque peut déposer des relevés fabriqués — et chaque relevé déclenche un diagnostic |
+| `APP_CORS_ALLOWED_ORIGINS` | `*` | toute page web peut appeler l'API depuis un navigateur. Borné par `allowCredentials=false` : aucune session n'est rejouable |
 
-Générer les secrets :
+> ⚠️ **Le secret JWT est le seul point vraiment sensible.** Les trois autres ouvrent des
+> abus de ressources ; celui-là ouvre l'**usurpation d'identité** — c'est la seule chose
+> qui distingue un jeton émis par le serveur d'un jeton fabriqué. Sur des données de
+> démonstration, c'est sans conséquence. Sur autre chose, non.
+
+**Fermer, le jour venu — aucun changement de code :**
 
 ```bash
 heroku config:set \
-  SPRING_PROFILES_ACTIVE=prod \
   APP_JWT_SECRET="$(openssl rand -base64 48)" \
   TOKEN_HASH_SECRET="$(openssl rand -base64 48)" \
   BILANGA_INGEST_DEVICE_KEY="$(openssl rand -hex 24)" \
   APP_CORS_ALLOWED_ORIGINS="https://votre-frontend.example"
 ```
+
+### 3.2 bis — La seule variable qui reste indispensable
+
+```bash
+heroku config:set SPRING_PROFILES_ACTIVE=prod
+```
+
+Sans elle, le profil `dev` s'applique : **auto-admin actif** (toute requête sans jeton est
+authentifiée comme administrateur), routes métier ouvertes, `DefaultAdminSeeder` qui crée
+un compte au mot de passe connu. L'application démarre — et c'est bien le problème.
+
+### 3.2 ter — Les deux leviers de secours
+
+Le défaut reste la posture **fermée**. Si tout répond 403 le jour de la démonstration :
+
+| Variable | Effet |
+|---|---|
+| `APP_SECURITY_OPEN_BUSINESS_ROUTES=true` | ouvre toutes les routes métier sans autorisation |
+| `APP_SECURITY_OWNERSHIP_ENABLED=false` | lève le cloisonnement par propriétaire |
+
+Les deux étaient jusqu'ici codés en dur et **non surchargeables** ; les activer faisait en
+outre échouer `ConfigurationGuard`. Les deux verrous ont sauté ensemble — un levier qu'on
+ne peut pas actionner n'est pas un levier. Chaque activation est journalisée en `ERROR` à
+chaque démarrage.
 
 ### 3.3 À régler selon l'usage
 
@@ -157,39 +188,41 @@ heroku config:set \
 
 ---
 
-## 4. 🔴 Le blocage : aucun compte ne peut être créé en production
+## 4. ✅ L'amorçage du premier compte — corrigé
 
-**Ce n'est pas une hypothèse, c'est une lecture du code.** Sur une base de production
-neuve, aucun utilisateur n'existe, et les trois chemins d'entrée sont fermés
-simultanément :
+> **Ce paragraphe décrivait un blocage réel, levé le 2026-07-30.** Il est conservé parce
+> que la conjonction qui l'avait produit mérite d'être connue.
 
-| Chemin | Pourquoi il est fermé en `prod` |
+Sur une base de production neuve, aucun utilisateur n'existe — et les trois chemins
+d'entrée étaient fermés **simultanément** :
+
+| Chemin | Pourquoi il était fermé |
 |---|---|
 | `DefaultAdminSeeder` | porte `@Profile("dev")` — le composant **n'existe pas** en prod |
-| `app.security.bootstrap-admin.enabled` | `false` dans `application-prod.yaml`, **non surchargeable** par l'environnement |
-| `POST /admin/provisioning/bootstrap-admin` | `open-business-routes.enabled=false` ⇒ la règle passe à `AdminApiAuthorizationManager`, qui exige `SYSTEM:USERS` pour `/admin/provisioning` ⇒ **403 pour un appelant anonyme** |
+| `app.security.bootstrap-admin.enabled` | `false` en prod, non surchargeable |
+| `POST /admin/provisioning/bootstrap-admin` | tombait sur `AdminApiAuthorizationManager`, qui exige `SYSTEM:USERS` ⇒ **403 pour un anonyme** |
 
-Et `open-business-routes.enabled` est lui aussi codé à `false` dans le profil `prod`, sans
-surcharge possible — délibérément, pour qu'une variable oubliée ne rouvre pas l'API.
-
-> Chaque décision est juste prise isolément. Leur conjonction produit un déploiement où
-> **personne ne peut jamais se connecter**, et le symptôme est trompeur : l'application
+> Chaque décision était juste prise isolément. Leur conjonction produisait un déploiement
+> où **personne ne pouvait jamais se connecter**, avec un symptôme trompeur : l'application
 > démarre proprement, `/actuator/health` répond, et toute autre route renvoie 403.
 
-### Les trois issues
+**Correctif retenu** : `POST /admin/provisioning/bootstrap-admin` est désormais en
+`permitAll` dans `SecurityConfig` — en POST uniquement, et cette route seule. `/staff`
+reste gardée par `SYSTEM:USERS`.
 
-| # | Solution | Coût | Risque résiduel |
-|:-:|---|---|---|
-| **A** | Ajouter `/admin/provisioning/bootstrap-admin` aux routes `permitAll` de `SecurityConfig` | 1 ligne | **faible** — la route refuse déjà de s'exécuter une seconde fois (409 dès qu'un ADMIN existe). C'est exactement le rôle qu'elle a été écrite pour tenir |
-| **B** | Activer `DefaultAdminSeeder` en prod, mot de passe imposé par variable obligatoire | retirer `@Profile("dev")` + un contrôle | un compte se crée tout seul ; le mot de passe transite par la configuration |
-| **C** | Insérer le premier compte à la main via `heroku pg:psql` | aucun code | il faut fabriquer un hachage BCrypt hors application, et le geste est à refaire à chaque base neuve |
+Ce qui rend l'ouverture acceptable : **la route refuse de s'exécuter une seconde fois**.
+`UserProvisioningServiceImpl` lève un `ConflictException` (409) dès qu'un compte ADMIN
+existe. Exiger une permission pour créer le compte qui délivre les permissions était un
+cercle sans issue.
 
-**Ma recommandation : A.** Le garde-fou existe déjà et il est bon — une route d'amorçage
-qui se referme après le premier usage est le motif standard, et c'est précisément ainsi
-que `UserProvisioningController` est documenté (`RBAC_FRONTEND.md` §2).
+```bash
+curl -X POST https://bilanga-api.herokuapp.com/sni/api/v1/admin/provisioning/bootstrap-admin   -H 'Content-Type: application/json'   -d '{"email":"admin@bilanga.cg","firstname":"...","lastname":"...",
+       "password":"...","generatePassword":false}'
+```
 
-⚠️ **Je n'ai rien modifié** : toucher à `SecurityConfig` demande votre accord
-(`CLAUDE.md` §8). Dites-moi laquelle vous retenez.
+> ⚠️ **À faire immédiatement après le premier déploiement.** Tant qu'aucun administrateur
+> n'existe, cette route est ouverte à tous — le premier arrivé obtient le compte qui détient
+> tous les droits. Le second appel répond 409 : ce n'est pas une panne, c'est le garde-fou.
 
 ---
 
@@ -564,20 +597,22 @@ Deux conséquences à connaître :
 
 ---
 
-## 7. 🟠 `.env` est suivi par git
+## 7. ✅ `.env` — retiré de l'index avant le premier commit
 
-`git status` le montre en `AM` — donc **ajouté à l'index**, et absent de `.gitignore`. Il
-porte des mots de passe de base et, historiquement, des secrets.
+Il était **ajouté à l'index** et absent de `.gitignore` : le premier `git push` l'aurait
+publié sur GitHub avec ses mots de passe.
 
 ```bash
-git rm --cached .env
-echo ".env" >> .gitignore
+git rm --cached -f .env
 ```
 
-> ✅ **Vérifié : le dépôt ne compte aucun commit** (`git log --all` est vide). `.env` n'est
-> donc que **dans l'index**, jamais dans l'historique. Les deux commandes ci-dessus
-> suffisent, et **aucun secret n'a besoin d'être régénéré** — ce qui ne serait plus vrai
-> après le premier commit. À faire maintenant, pas après.
+`.gitignore` porte désormais `.env`, `.env.*` et l'exception `!.env.example`.
+
+> ✅ **Vérifié avant le push : le dépôt ne comptait aucun commit.** `.env` n'était donc que
+> dans l'index, jamais dans l'historique — **aucun secret n'a besoin d'être régénéré**. Ce
+> n'aurait plus été vrai d'un seul commit.
+>
+> Le fichier reste sur votre disque : `--cached` ne touche pas la copie de travail.
 
 Sur Heroku, `.env` n'est de toute façon jamais lu : la configuration passe par
 `heroku config:set`.

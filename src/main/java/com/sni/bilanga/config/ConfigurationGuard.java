@@ -143,12 +143,24 @@ public class ConfigurationGuard implements InitializingBean {
      * mais elle cesse d'être invisible.
      */
     private void checkSecurityPosture(List<String> problems, boolean production) {
+        // ⚠️ AVERTISSEMENTS, ET NON REFUS, depuis le 2026-07-30.
+        //
+        // Ces deux contrôles arrêtaient le démarrage en production. Ils ont été
+        // assouplis en même temps que les valeurs par défaut du profil prod : les
+        // leviers correspondants (APP_SECURITY_OWNERSHIP_ENABLED,
+        // APP_SECURITY_OPEN_BUSINESS_ROUTES) n'auraient servi à rien si les
+        // actionner empêchait de démarrer.
+        //
+        // Le compromis retenu : la posture reste FERMÉE par défaut, l'ouvrir
+        // demande un geste explicite, et ce geste est journalisé bruyamment à
+        // chaque démarrage plutôt que refusé. Une posture permissive doit rester
+        // visible ; elle n'a plus à être bloquante.
         if (!app.getSecurity().getOwnership().isEnabled()) {
             String message = "app.security.ownership.enabled=false : les données ne sont pas "
                     + "cloisonnées par propriétaire, n'importe qui peut consulter n'importe "
                     + "quelle parcelle.";
             if (production) {
-                problems.add(message);
+                log.error("⚠⚠ EN PRODUCTION — {}", message);
             } else {
                 log.warn("⚠ {}", message);
             }
@@ -163,17 +175,34 @@ public class ConfigurationGuard implements InitializingBean {
                     + "n'est jamais consulté, et la matrice de permissions de la V24 est inerte "
                     + "— seul @PreAuthorize protège encore les contrôleurs d'administration.";
             if (production) {
-                problems.add(message);
+                log.error("⚠⚠ EN PRODUCTION — {}", message);
             } else {
                 log.warn("⚠ {}", message);
             }
         }
 
-        // Une origine générique n'a de sens qu'en développement, où le frontend
-        // tourne sur un port arbitraire.
+        // ⚠️ AVERTISSEMENT, ET NON REFUS — décision du 2026-07-30, assumée.
+        //
+        // Cette règle bloquait le démarrage en production sur une origine « * ».
+        // Elle a été assouplie pour la soutenance : le frontend n'a pas encore de
+        // domaine stable, et un déploiement qui refuse de démarrer sur un détail
+        // de CORS coûte plus qu'il ne protège dans ce contexte.
+        //
+        // CE QUE CELA OUVRE, EXACTEMENT : n'importe quelle page web peut appeler
+        // l'API depuis le navigateur d'un visiteur. La portée reste bornée par
+        // allowCredentials=false — le navigateur ne joint AUCUN cookie ni en-tête
+        // d'authentification implicite, donc une page tierce ne peut pas rejouer
+        // la session de quelqu'un. Elle peut seulement appeler l'API en son nom
+        // propre, ce que n'importe quel client HTTP fait déjà sans passer par un
+        // navigateur.
+        //
+        // À REFERMER avant tout usage réel : poser APP_CORS_ALLOWED_ORIGINS sur
+        // le domaine du frontend suffit, sans toucher au code.
         if (production && app.getSecurity().getCors().getAllowedOriginPatterns().contains("*")) {
-            problems.add("app.security.cors.allowed-origin-patterns contient « * » : "
-                    + "n'importe quelle page pourrait appeler l'API. Énumérez les origines.");
+            log.warn("⚠ app.security.cors.allowed-origin-patterns contient « * » EN PRODUCTION : "
+                    + "n'importe quelle page peut appeler l'API depuis un navigateur. "
+                    + "Tolérable seulement parce que allowCredentials=false. "
+                    + "Énumérez les origines via APP_CORS_ALLOWED_ORIGINS avant tout usage réel.");
         }
 
         if (!app.getSecurity().getAutoAdmin().isEnabled()) {

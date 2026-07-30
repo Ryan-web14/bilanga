@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+
+# tensorflow-cpu, JAMAIS tensorflow : ce dernier pèse plus de 600 Mo et dépasse
+# à lui seul la limite de slug de 500 Mo. Aucun GPU n'est disponible sur un
+# dyno — la variante CPU ne retire donc rien en pratique.
+tensorflow-cpu
+
+pillow
+numpy
+pandas
+joblib
+
+# ⚠️ ÉPINGLEZ la version qui a produit vos .pkl.
+#    pip freeze | grep scikit-learn   sur le poste d'entraînement.
+# Un joblib.load sur une version différente avertit, puis échoue franchement à
+# partir d'un écart majeur — au démarrage, en production, sur une machine que
+# vous ne voyez pas. C'est la panne la plus déroutante du lot.
+scikit-learn
