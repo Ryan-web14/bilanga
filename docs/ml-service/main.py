@@ -1,6 +1,18 @@
 """
 BILANGA — service d'inférence.
 
+⚠️ CE FICHIER PRÉCÈDE LE PASSAGE À TFLITE. Il charge les modèles avec
+`tf.keras.models.load_model`, ce qui n'est plus la manière dont le service
+déployé fonctionne — et TFLite est le meilleur choix : la vision répond en
+1,3 s à chaud, là où TensorFlow complet aurait flirté avec la coupure à 30 s
+d'Heroku.
+
+NE REPRENEZ PAS le chargement des modèles d'ici. Reprenez-en `_coerce()` et
+`_encode()` : ce sont eux qui traitent les deux défauts encore présents en
+production, constatés le 2026-07-30 et détaillés dans README.md.
+
+---
+
 Version corrigée du service fourni le 2026-07-30. Trois défauts traités, et un
 seul cassait le cas nominal.
 

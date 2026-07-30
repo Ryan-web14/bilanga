@@ -1,5 +1,150 @@
 # Service d'inférence — fichiers de déploiement
 
+---
+
+## ⚠️ Constats sur le service DÉPLOYÉ — 2026-07-30
+
+> Relevés en interrogeant `https://bilanga-ml-587151bad5cb.herokuapp.com`, pas en lisant du
+> code. **Le service est en ligne et répond**, les modèles TFLite sont chargés, et le
+> contrat de réponse est bon.
+>
+> **Mais dans son état actuel il ne peut servir aucun diagnostic capteur réel.** Deux
+> défauts, tous deux dans la requête, tous deux corrigeables côté Python seulement.
+
+| Test | Résultat |
+|---|---|
+| `GET /health` | ✅ 200 · `visionModels: [manioc, tomate]` · `soilLoaded: true` |
+| `POST /predict/vision-b64` | ✅ 200 en 1,3 s · `diseaseClass` en camelCase · noms de classes bruts |
+| `POST /predict/soil`, `type_sol: "argileux"` | ✅ 200 · `{category, confidence, allProbabilities}` |
+| `POST /predict/soil`, `type_sol: "ARGILEUX"` | 🔴 **400** — *Valeur inconnue pour 'type_sol'* |
+| `POST /predict/soil`, mesures à `null` | 🔴 **422** — *Input should be a valid number* |
+| URL avec `/` final ⇒ `//predict/soil` | 🔴 **404** |
+
+### 🔴 1. `type_sol` — le service attend des minuscules, Java envoie des MAJUSCULES
+
+Ce n'est pas négociable côté Java, et ce n'est pas un choix de style :
+
+```java
+plot.setSoilType(DomainEnums.nameOf(request.getSoilType()));   // → .name() → MAJUSCULES
+```
+```sql
+-- V11__constraints.sql
+UPDATE plots SET soil_type = upper(trim(soil_type)) WHERE soil_type IS NOT NULL;
+ALTER TABLE plots ADD CONSTRAINT chk_plots_soil_type
+    CHECK (soil_type IS NULL OR soil_type IN ('ARGILEUX', 'LIMONEUX', 'SABLEUX'));
+```
+
+**La base de données ne PEUT PAS contenir de minuscules.** Une contrainte `CHECK` l'interdit
+depuis la V11. Le correctif est donc nécessairement Python.
+
+> **Conséquence si rien n'est fait : 100 % des diagnostics capteur échouent.** Pas une
+> fraction — tous. Et l'échec se lit côté backend comme `ML_INDISPONIBLE`, c'est-à-dire
+> comme une panne réseau, ce qui enverra chercher au mauvais endroit.
+
+**Correctif** — normaliser à l'entrée, sans toucher aux encodeurs :
+
+```python
+def _normalise_categorical(column: str, value, encoder):
+    """Le backend envoie type_sol en MAJUSCULES (contrainte CHECK de la V11) et
+    culture en minuscules (forme de stockage). L'entraînement a pu employer une
+    autre casse : on cherche la correspondance plutôt que d'exiger la nôtre."""
+    known = list(encoder.classes_)
+    raw = str(value)
+    for candidate in (raw, raw.lower(), raw.upper(), raw.capitalize()):
+        if candidate in known:
+            return candidate
+    raise HTTPException(400, f"Valeur inconnue pour '{column}' : {raw!r} "
+                             f"(attendu : {' | '.join(known)})")
+```
+
+### 🔴 2. Les mesures absentes sont refusées en **422**
+
+La validation Pydantic typant les champs en `float` **non optionnel**, un `null` est rejeté
+avant même d'atteindre le modèle. C'est le même défaut qu'avant, remonté d'un cran : il
+échouait à l'encodage, il échoue maintenant à la validation.
+
+> **Or c'est le cas NORMAL.** `IngestReadingRequest` déclare toutes les métriques
+> facultatives — seul `technicalId` est obligatoire. Un boîtier sans sonde de luminosité,
+> ou dont une sonde est débranchée, produit exactement cette requête. Et le backend envoie
+> **toujours les treize clés**, y compris à `null` : Jackson sérialise les valeurs nulles
+> d'une `Map`.
+
+**Correctif** — rendre les champs optionnels, imputer, et **dégrader la confiance** :
+
+```python
+from typing import Optional
+
+class SoilPayload(BaseModel):
+    temperature:  Optional[float] = None
+    humidite_sol: Optional[float] = None
+    humidite_air: Optional[float] = None
+    ph:           Optional[float] = None
+    azote:        Optional[float] = None
+    phosphore:    Optional[float] = None
+    potassium:    Optional[float] = None
+    luminosite:   Optional[float] = None
+    culture:      str
+    type_sol:     Optional[str] = None
+
+    model_config = {"extra": "ignore"}   # le backend envoie 3 clés de plus (V16)
+```
+
+Puis, avant la prédiction — reprendre `_coerce()` de `main.py`, et surtout :
+
+```python
+confidence = float(np.max(proba))
+if imputed:
+    confidence *= max(0.4, 1.0 - 0.15 * len(imputed))
+```
+
+> **C'est ce dernier point qui ferme la boucle.** Sous 0,60, `ConfidenceEvaluator` marque
+> le diagnostic non fiable côté Java et **aucune alerte n'est levée**. Le système refuse de
+> conseiller sur des chiffres qu'il a fabriqués, sans que personne ait à y penser. Imputer
+> sans dégrader la confiance serait pire que de refuser : on obtiendrait un diagnostic faux
+> présenté avec l'assurance d'un diagnostic juste.
+
+### 🔴 3. `BILANGA_ML_BASE_URL` — **sans barre finale**
+
+`MlHttpExchange` concatène : `baseUrl + "/predict/soil"`. Une barre finale produit
+`//predict/soil`, et Starlette ne normalise pas les doubles barres — **404 vérifié**.
+
+```bash
+# ✅
+heroku config:set BILANGA_ML_BASE_URL=https://bilanga-ml-587151bad5cb.herokuapp.com
+# 🔴 404 sur chaque appel
+heroku config:set BILANGA_ML_BASE_URL=https://bilanga-ml-587151bad5cb.herokuapp.com/
+```
+
+### ✅ Ce qui est bon, et qu'il ne faut pas toucher
+
+- **`diseaseClass` en camelCase** et noms de classes bruts (`Tomato___Late_blight`) — le
+  backend normalise le préfixe lui-même.
+- **`allProbabilities` sur `/predict/soil`** : le backend l'ignore sans broncher. Vérifié
+  par `MlContractTest` — le mapper de `MlHttpExchange` tolère les champs inconnus.
+- **TFLite** : bon choix. La vision répond en 1,3 s à chaud, là où le chargement de
+  TensorFlow complet aurait flirté avec la coupure à 30 s d'Heroku.
+
+### Rejouer ces tests après correction
+
+```bash
+B=https://bilanga-ml-587151bad5cb.herokuapp.com
+
+# doit passer de 400 à 200
+curl -s -X POST "$B/predict/soil" -H 'Content-Type: application/json' -d '{
+ "temperature":28.4,"humidite_sol":41.2,"humidite_air":78.0,"ph":6.4,
+ "azote":42.0,"phosphore":18.0,"potassium":30.0,"luminosite":21000.0,
+ "culture":"tomate","type_sol":"ARGILEUX",
+ "temperature_sol":24.1,"pluviometrie":0.0,"conductivite_electrique":1.2}'
+
+# doit passer de 422 à 200, avec une confidence NETTEMENT plus basse
+curl -s -X POST "$B/predict/soil" -H 'Content-Type: application/json' -d '{
+ "temperature":28.4,"humidite_sol":null,"humidite_air":null,"ph":6.4,
+ "azote":null,"phosphore":null,"potassium":30.0,"luminosite":null,
+ "culture":"tomate","type_sol":"ARGILEUX"}'
+```
+
+---
+
 > Ce dossier **ne fait pas partie du backend Java**. C'est le service Python/FastAPI,
 > déployé séparément, que `BILANGA_ML_BASE_URL` désigne.
 >
