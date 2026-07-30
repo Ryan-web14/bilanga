@@ -12,7 +12,9 @@ import com.sni.bilanga.exception.customs.ResourceNotFoundException;
 import com.sni.bilanga.iot.dto.request.IngestBatchRequest;
 import com.sni.bilanga.iot.dto.response.IngestBatchResult;
 import com.sni.bilanga.exception.customs.ServiceUnavailableException;
+import com.sni.bilanga.enums.EquipmentStatus;
 import com.sni.bilanga.farm.model.Plot;
+import com.sni.bilanga.farm.repository.PlotRepository;
 import com.sni.bilanga.iot.dto.request.IngestReadingRequest;
 import com.sni.bilanga.iot.dto.response.IngestResult;
 import com.sni.bilanga.iot.model.IotDevice;
@@ -54,6 +56,8 @@ public class IngestServiceImpl implements IngestService {
     private final SensorHealthAnalyzer sensorHealthAnalyzer;
     private final AlertService alertService;
     private final BilangaProperties.Diagnosis diagnosisConfig;
+    private final BilangaProperties.Ingest ingestConfig;
+    private final PlotRepository plotRepository;
 
     /**
      * Référence à soi-même via le conteneur, pour que le rejeu d'un lot traverse
@@ -63,13 +67,82 @@ public class IngestServiceImpl implements IngestService {
     private final ObjectProvider<IngestService> self;
 
 
+    /**
+     * Crée le boîtier au premier relevé d'un identifiant inconnu.
+     *
+     * <p><strong>Le mur que cela lève.</strong> Un {@code technicalId} inconnu était
+     * refusé en 404. C'est juste en exploitation — un boîtier fantôme fausserait le
+     * parc — mais insurmontable en simulation : le firmware s'authentifie par clé
+     * partagée, pas par jeton, et ne peut donc pas appeler {@code POST /devices}.
+     * Chaque nouveau montage imposait un enregistrement manuel préalable.
+     *
+     * <p>Le boîtier créé rejoint ensuite le chemin ordinaire — plausibilité, santé de
+     * sonde, diagnostic. Rien d'autre ne change.
+     *
+     * <p><strong>Le 404 subsiste quand il n'y a AUCUNE parcelle</strong>, et c'est
+     * volontaire : un relevé doit se rattacher quelque part, et inventer une parcelle
+     * serait fabriquer une donnée métier à partir d'un paquet réseau.
+     */
+    private IotDevice autoRegister(String technicalId) {
+        if (!ingestConfig.getAutoRegister().isEnabled()) {
+            throw new ResourceNotFoundException(
+                    "Boîtier non enregistré : " + technicalId,
+                    ErrorCode.DEVICE_NOT_REGISTERED);
+        }
+
+        Plot plot = resolveHostPlot(technicalId);
+
+        IotDevice device = iotDeviceRepository.save(IotDevice.builder()
+                .plot(plot)
+                .technicalId(technicalId)
+                .deviceName(ingestConfig.getAutoRegister().getDeviceNamePrefix() + " " + technicalId)
+                .status(EquipmentStatus.ACTIVE.name())
+                .build());
+
+        log.warn("Boîtier « {} » INCONNU : enregistré automatiquement sur la parcelle "
+                        + "« {} » (id {}). Rattachement corrigeable par PUT /devices/{}. "
+                        + "Désactivez bilanga.ingest.auto-register.enabled une fois le parc stabilisé.",
+                technicalId, plot.getName(), plot.getId(), device.getId());
+
+        return device;
+    }
+
+    /**
+     * Parcelle d'accueil : celle qui est configurée, sinon la plus récemment créée.
+     *
+     * <p>Le repli est une commodité assumée, non une déduction : sur une instance de
+     * démonstration, la dernière parcelle créée est presque toujours celle de l'essai
+     * en cours. Il est journalisé pour que le rattachement ne soit jamais une surprise.
+     */
+    private Plot resolveHostPlot(String technicalId) {
+        Long configured = ingestConfig.getAutoRegister().getPlotId();
+
+        if (configured != null) {
+            return plotRepository.findById(configured).orElseThrow(() ->
+                    new ResourceNotFoundException(
+                            "Boîtier « " + technicalId + " » inconnu, et la parcelle d'accueil "
+                                    + "configurée (bilanga.ingest.auto-register.plot-id = "
+                                    + configured + ") est introuvable.",
+                            ErrorCode.DEVICE_NOT_REGISTERED));
+        }
+
+        return plotRepository.findAll(
+                        org.springframework.data.domain.PageRequest.of(0, 1,
+                                org.springframework.data.domain.Sort.by(
+                                        org.springframework.data.domain.Sort.Direction.DESC, "id")))
+                .stream().findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Boîtier « " + technicalId + " » inconnu, et aucune parcelle n'existe "
+                                + "pour l'accueillir. Créez une parcelle, ou enregistrez le "
+                                + "boîtier par POST /devices.",
+                        ErrorCode.DEVICE_NOT_REGISTERED));
+    }
+
     @Override
     @Transactional
     public IngestResult ingest(IngestReadingRequest request) {
         IotDevice device = iotDeviceRepository.findByTechnicalId(request.getTechnicalId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Boîtier non enregistré : " + request.getTechnicalId(),
-                        ErrorCode.DEVICE_NOT_REGISTERED));
+                .orElseGet(() -> autoRegister(request.getTechnicalId()));
 
         Plot plot = device.getPlot();
 

@@ -146,6 +146,28 @@ bilanga:
     # Prévu pour l'intégration du module IoT ; à remettre à true ensuite.
     require-device-key: ${BILANGA_INGEST_REQUIRE_DEVICE_KEY:true}
 
+    # Enregistrement du boîtier à son premier relevé.
+    #
+    # LE MUR QUE CELA LÈVE. Un technicalId inconnu était refusé en 404. C'est
+    # juste en exploitation — un boîtier fantôme fausserait le parc — mais
+    # insurmontable en simulation : le firmware s'authentifie par clé partagée,
+    # pas par jeton, et ne peut donc pas appeler POST /devices. Chaque nouveau
+    # montage Wokwi imposait un enregistrement manuel préalable, avec un jeton
+    # d'administration que le simulateur n'a pas.
+    #
+    # Ce que cela ouvre : quiconque détient la clé d'ingestion peut créer des
+    # boîtiers. Il pouvait déjà déposer des relevés sur tout boîtier existant,
+    # donc déclencher diagnostics et alertes — l'ajout élargit le bruit
+    # possible, il n'ouvre pas une porte qui était fermée.
+    #
+    # À repasser à false quand le parc est stabilisé.
+    auto-register:
+      enabled: ${BILANGA_INGEST_AUTO_REGISTER:true}
+      # Vide ⇒ la parcelle la plus récemment créée. Commodité assumée : sur une
+      # instance de démonstration, c'est celle de l'essai en cours.
+      plot-id: ${BILANGA_INGEST_AUTO_REGISTER_PLOT_ID:}
+      device-name-prefix: ${BILANGA_INGEST_AUTO_REGISTER_PREFIX:Boîtier auto}
+
   diagnosis:
     min-interval-minutes: 5
     throttle:

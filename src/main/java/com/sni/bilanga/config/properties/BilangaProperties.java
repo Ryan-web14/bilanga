@@ -142,6 +142,58 @@ public class BilangaProperties {
          * transmettre l'en-tête.
          */
         private boolean requireDeviceKey = true;
+
+        @Valid private final AutoRegister autoRegister = new AutoRegister();
+
+        /**
+         * Enregistrement automatique d'un boîtier inconnu, à son premier relevé.
+         *
+         * <h2>Le manque comblé</h2>
+         *
+         * <p>Un relevé portant un {@code technicalId} inconnu était refusé en 404
+         * {@code DEVICE_NOT_REGISTERED}. C'est juste en exploitation — un boîtier
+         * fantôme fausserait le parc — mais c'est un mur en simulation : chaque
+         * nouveau montage Wokwi, chaque changement d'identifiant, imposait un
+         * passage par {@code POST /devices} avec un jeton d'administration. Le
+         * simulateur ne peut pas s'authentifier ; l'exploitant devait donc
+         * enregistrer à la main un boîtier qui n'existe pas.
+         *
+         * <p>Activé, le premier relevé d'un identifiant inconnu <strong>crée</strong>
+         * le boîtier et le rattache à une parcelle, puis suit le chemin ordinaire :
+         * plausibilité, santé de sonde, diagnostic. Rien d'autre ne change.
+         *
+         * <p><strong>Ce que cela ouvre, exactement.</strong> Quiconque détient la
+         * clé d'ingestion peut créer des boîtiers. Sans cette option il pouvait
+         * déjà déposer des relevés sur tout boîtier existant, donc déclencher des
+         * diagnostics et des alertes — l'ajout élargit le bruit possible, il
+         * n'ouvre pas une porte qui était fermée.
+         */
+        @Data
+        public static class AutoRegister {
+
+            /**
+             * Défaut : {@code true}. Le projet est en phase d'intégration IoT et de
+             * démonstration ; un simulateur qui se heurte à un 404 sans pouvoir
+             * s'authentifier est un obstacle sans contrepartie. À repasser à
+             * {@code false} lorsque le parc est stabilisé et que les boîtiers sont
+             * enregistrés une fois pour toutes.
+             */
+            private boolean enabled = true;
+
+            /**
+             * Parcelle d'accueil des boîtiers créés automatiquement.
+             *
+             * <p>Vide, le service retient la parcelle {@code ACTIVE} la plus
+             * récemment créée. C'est un choix assumé de commodité : sur une
+             * instance de démonstration, c'est presque toujours celle qu'on vient
+             * de créer pour l'essai en cours. Le rattachement est journalisé, et
+             * reste corrigeable par {@code PUT /devices/{id}}.
+             */
+            private Long plotId;
+
+            /** Préfixe du nom donné au boîtier créé, suivi de son identifiant technique. */
+            private String deviceNamePrefix = "Boîtier auto";
+        }
     }
 
     /** Orchestration du diagnostic. */
