@@ -126,7 +126,12 @@ public class SecurityConfig {
                         // La règle /ws/** a été retirée au lot 5 : aucun point
                         // d'entrée WebSocket n'existe, et la dépendance a été
                         // supprimée du pom.xml.
-                        auth.requestMatchers("/actuator/health", "/actuator/info").permitAll();
+                        // Les SOUS-CHEMINS de santé sont ouverts aussi : /health seul
+                        // ne couvrait ni /health/liveness ni /health/readiness, qui
+                        // répondaient donc 401 — précisément quand on cherche à savoir
+                        // pourquoi le service est déclaré DOWN.
+                        auth.requestMatchers("/actuator/health", "/actuator/health/**",
+                                "/actuator/info").permitAll();
 
                         // Documentation d'API. Ces chemins sont HORS du préfixe
                         // /sni/api/v1, donc non couverts par les règles ci-dessus.

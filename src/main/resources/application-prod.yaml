@@ -159,6 +159,35 @@ springdoc:
   swagger-ui:
     enabled: ${SPRINGDOC_ENABLED:false}
 
+# ============================================================
+# Supervision
+# ============================================================
+management:
+  health:
+    # ⚠️ REDIS EST FACULTATIF PAR CONCEPTION — son indicateur ne doit pas
+    # faire mentir /actuator/health.
+    #
+    # Sans module Redis provisionné, RedisHealthIndicator échoue, l'agrégat
+    # bascule à DOWN et /actuator/health répond 503. Or l'application est
+    # parfaitement saine : le cache à deux niveaux est écrit pour se rabattre
+    # sur Caffeine, et c'est un invariant du projet — « une capacité
+    # indisponible retire une capacité, elle ne casse rien ».
+    #
+    # Un service qui se déclare en panne alors qu'il fonctionne est pire qu'une
+    # absence de supervision : on apprend à ignorer le voyant. À REMETTRE À
+    # `true` le jour où un module Redis est provisionné — là, son absence
+    # deviendrait une vraie anomalie.
+    redis:
+      enabled: ${MANAGEMENT_HEALTH_REDIS_ENABLED:false}
+
+  endpoint:
+    health:
+      # Choix de DÉMONSTRATION : sans le détail, un DOWN ne dit pas QUEL
+      # indicateur est tombé, et il faut redéployer pour le savoir. Le détail
+      # nomme les composants (db, diskSpace, ping) sans exposer de secret.
+      # Repasser à `never` avant tout usage réel.
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:always}
+
 logging:
   level:
     root: WARN

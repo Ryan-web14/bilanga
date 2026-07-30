@@ -1,0 +1,842 @@
+### ============================================================
+### Bilanga — parcours de PRODUCTION, de l'amorçage à l'analyse
+###
+### DISTINCT de parcours-fonctionnel.http, et il faut savoir pourquoi :
+### celui-là vise localhost en profil « dev », où l'auto-admin authentifie toute
+### requête sans jeton et où le compte administrateur est créé au démarrage.
+### RIEN DE CELA N'EXISTE EN PRODUCTION. Ici :
+###
+###   · le premier compte se crée à la main (bloc 1) ;
+###   · CHAQUE appel porte un jeton — open-business-routes.enabled=false ;
+###   · le cloisonnement par propriétaire est ACTIF (ownership.enabled=true) ;
+###   · le microservice d'inférence est le service déployé, pas localhost:8000.
+###
+### COMMENT S'EN SERVIR
+###   IntelliJ IDEA ou VS Code (extension REST Client) : « Send Request » sur
+###   chaque bloc, dans l'ordre. Les variables @nom se remplissent au fil du
+###   parcours — recopiez les identifiants rendus par les réponses.
+###
+###   ⚠️ Les identifiants sortent en CHAÎNES (Snowflake, 19 chiffres). Recopiez-les
+###      tels quels, sans les convertir.
+###
+### CE QU'IL FAUT VÉRIFIER est écrit sous « ATTENDU » en tête de chaque bloc.
+### Un attendu non observé est un défaut à noter, pas une requête à réessayer.
+### ============================================================
+
+@host = https://bilanga-c65c6649bf37.herokuapp.com
+@api = {{host}}/sni/api/v1
+
+### Clé d'ingestion — valeur par défaut de démonstration.
+### Si vous avez posé BILANGA_INGEST_DEVICE_KEY, mettez la vôtre.
+@deviceKey = bilanga-demo-device-key-soutenance-2026
+
+### À remplir depuis les réponses, au fil du parcours
+@token =
+@adminUserId =
+@plotId =
+@cropId =
+@deviceId =
+@diagnosticId =
+@recommendationId =
+@interventionId =
+@operationId =
+@readingRecordedAt =
+
+
+### ============================================================
+### 0. LE SERVICE EST-IL DEBOUT ?
+### ============================================================
+
+### 0.1 — Santé de l'application
+### ATTENDU : 200, {"status":"UP"}, avec le détail par composant.
+###
+### ⚠️ SI 503 AVEC status:DOWN, NE CONCLUEZ PAS À UNE PANNE avant d'avoir lu le
+###    détail. L'application peut être parfaitement fonctionnelle et un seul
+###    indicateur tomber — c'était le cas au premier déploiement : Redis,
+###    facultatif par conception, faisait basculer l'agrégat.
+###
+###    Le vrai test de vie est le bloc 0.3 : s'il répond BAD_CREDENTIALS, la
+###    base est jointe, Flyway a appliqué V1→V29 et ddl-auto:validate est passé.
+###
+### ⚠️ Le PREMIER appel après une mise en veille prend 20 à 30 s : c'est le
+###    démarrage complet du contexte Spring, pas une lenteur de l'API.
+GET {{host}}/actuator/health
+
+### 0.3 — La base est-elle réellement jointe ?
+### ATTENDU : 401 avec errorCode BAD_CREDENTIALS.
+### ⭐ C'est un SUCCÈS. Une erreur métier prouve que la requête est allée
+###    jusqu'à la table des utilisateurs — donc que Flyway a tourné et que le
+###    schéma valide. Une 500 ou un délai dépassé signaleraient l'inverse.
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{ "email": "inexistant@bilanga.cg", "password": "x" }
+
+### 0.2 — Le microservice d'inférence répond-il ?
+### ATTENDU : 200, soilLoaded:true, visionModels:[manioc,tomate].
+### S'il dort (dyno en veille), le premier appel peut prendre 30 s. Réveillez-le
+### AVANT le bloc 4 : sinon le premier diagnostic partira en ML_INDISPONIBLE et
+### vous chercherez un bug qui n'existe pas.
+GET https://bilanga-ml-587151bad5cb.herokuapp.com/health
+
+
+### ============================================================
+### 1. AMORÇAGE — le premier compte
+###
+### En production, DefaultAdminSeeder n'existe pas (@Profile("dev")) et
+### bootstrap-admin.enabled vaut false. Cette route est le SEUL chemin d'entrée,
+### et elle est ouverte SANS AUTHENTIFICATION — exiger une permission pour créer
+### le compte qui délivre les permissions serait un cercle sans issue.
+###
+### ⚠️ À JOUER IMMÉDIATEMENT APRÈS LE DÉPLOIEMENT. Tant qu'aucun ADMIN n'existe,
+###    le premier arrivé obtient le compte qui détient tous les droits.
+### ============================================================
+
+### 1.1 — Créer l'administrateur
+### ATTENDU : 201, un UserResponse portant le rôle ADMIN.
+POST {{api}}/admin/provisioning/bootstrap-admin
+Content-Type: application/json
+
+{
+  "email": "admin@bilanga.cg",
+  "firstname": "Joel",
+  "lastname": "M.",
+  "password": "Bilanga@Prod2026",
+  "generatePassword": false
+}
+
+### 1.2 — Rejouer le même appel
+### ATTENDU : 409 CONFLICT.
+### ⭐ CE BLOC EST UN TEST, PAS UNE ERREUR. C'est lui qui rend l'ouverture du
+###    bloc 1.1 acceptable : la porte se referme d'elle-même. Si vous obtenez
+###    201 une seconde fois, c'est un défaut grave — signalez-le.
+POST {{api}}/admin/provisioning/bootstrap-admin
+Content-Type: application/json
+
+{
+  "email": "intrus@example.com",
+  "firstname": "Intrus",
+  "lastname": "X",
+  "password": "Peu@Importe2026",
+  "generatePassword": false
+}
+
+
+### ============================================================
+### 2. AUTHENTIFICATION
+### ============================================================
+
+### 2.1 — Se connecter
+### ATTENDU : 200, {accessToken, refreshToken}.
+### ⭐ Recopiez accessToken dans @token, tout en haut du fichier.
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@bilanga.cg",
+  "password": "Bilanga@Prod2026"
+}
+
+### 2.2 — Vérifier le jeton et les droits
+### ATTENDU : 200. authorities contient ROLE_ADMIN et les 36 permissions
+### (SYSTEM:USERS, FARM:*, IOT:*, DIAGNOSIS:*, KNOWLEDGE:*, HARVEST:*…).
+### ⭐ Recopiez userId dans @adminUserId.
+GET {{api}}/auth/me
+Authorization: Bearer {{token}}
+
+### 2.3 — Le même appel SANS jeton
+### ATTENDU : 401, avec un CORPS JSON portant errorCode et message.
+### ⭐ DEUX CHOSES SE VÉRIFIENT ICI. D'abord que l'auto-admin est bien COUPÉ —
+###    en dev, cet appel réussirait. Ensuite que le refus porte un corps : les
+###    gestionnaires 401/403 en construisaient un sans jamais l'écrire, et le
+###    client recevait un refus muet.
+GET {{api}}/auth/me
+
+
+### ============================================================
+### 3. LA PARCELLE ET LA CAMPAGNE
+### ============================================================
+
+### 3.1 — Créer une parcelle GÉOLOCALISÉE et PLUVIALE
+### ATTENDU : 201. Trois champs calculés à vérifier :
+###   · plotCode        « PARC-2026-000001 » — c'est lui qu'on dicte au téléphone
+###   · geolocated      true → la météo et le voisinage pourront s'appliquer
+###   · waterOnDemand   false → IrrigationAdapter reformulera les conseils
+###                     d'arrosage au lieu de dire « irriguez » sur une parcelle
+###                     qui n'a pas d'eau à la demande
+### ⭐ Recopiez id dans @plotId.
+POST {{api}}/plots
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Parcelle Nord",
+  "location": "Makotipoko",
+  "latitude": -2.7832,
+  "longitude": 15.4211,
+  "altitude": 320,
+  "soilType": "ARGILEUX",
+  "irrigationType": "PLUVIAL",
+  "area": 1.5,
+  "status": "ACTIVE",
+  "userId": "{{adminUserId}}"
+}
+
+### 3.2 — Déclarer une campagne DÉJÀ AVANCÉE
+### ATTENDU : 201.
+###   · growthStage             ≈ FRUCTIFICATION, PAS « LEVEE »
+###   · growthStageAutoResolved true
+###   · daysSincePlanting       ≈ 100, cycleProgress ≈ 0,83
+### ⭐ La date de plantation est volontairement dans le PASSÉ : c'est ce qui
+###    exerce GrowthStageResolver. Une campagne plantée aujourd'hui resterait en
+###    LEVEE et ne prouverait rien.
+### ⭐ Recopiez id dans @cropId.
+POST {{api}}/crops
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plotId": "{{plotId}}",
+  "cropName": "TOMATE",
+  "variety": "Roma",
+  "plantingDate": "2026-04-21",
+  "cycleDurationDays": 120,
+  "plantedArea": 0.8,
+  "plantDensity": 25000,
+  "seedLot": "LOT-2026-A17",
+  "status": "EN_COURS"
+}
+
+### 3.3 — Une seconde campagne sur la même parcelle
+### ATTENDU : 400, « Une culture est déjà en cours sur cette parcelle. »
+### ⭐ Test de règle métier, pas une erreur. Deux campagnes actives rendraient le
+###    choix du contexte de diagnostic silencieusement arbitraire.
+POST {{api}}/crops
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plotId": "{{plotId}}",
+  "cropName": "MANIOC",
+  "plantingDate": "2026-07-01",
+  "status": "EN_COURS"
+}
+
+### 3.4 — Enregistrer le boîtier
+### ATTENDU : 201, sensorHealth SAINE.
+### ⭐ Recopiez id dans @deviceId.
+POST {{api}}/devices
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plotId": "{{plotId}}",
+  "technicalId": "ESP32-PROD-01",
+  "deviceName": "Boîtier nord",
+  "status": "ACTIVE",
+  "batteryLevel": 92,
+  "batteryVoltage": 4.05,
+  "firmwareVersion": "1.4.2"
+}
+
+
+### ============================================================
+### 4. INGESTION ET DIAGNOSTIC — le cœur du système
+###
+### L'ingestion n'utilise PAS de jeton : un microcontrôleur n'a ni la mémoire ni
+### l'horloge pour gérer un cycle de vie de token. Elle s'authentifie par clé
+### partagée, comparée en temps constant.
+### ============================================================
+
+### 4.1 — Le boîtier annonce sa présence
+### ATTENDU : 200. ingestReady:true, deviceKnown:true.
+### Si ingestReady vaut false, la clé n'est pas configurée côté serveur et TOUT
+### le bloc 4 répondra 503 — inutile d'aller plus loin.
+GET {{api}}/ingest/health?technicalId=ESP32-PROD-01
+
+### 4.2 — Un relevé en STRESS HYDRIQUE
+### ATTENDU : 201, SANS enveloppe ApiResponse (le firmware n'a pas à la déballer).
+###   · diagnosed            true
+###   · diagnosis            renseigné — probablement STRESS_HYDRIQUE
+###   · recommendationCount  ≥ 1
+###   · skipReason           null
+###
+### ⚠️ SI skipReason = ML_INDISPONIBLE : le microservice dort ou l'URL est
+###    fausse. Vérifiez le bloc 0.2, puis que BILANGA_ML_BASE_URL n'a PAS de
+###    barre finale — une barre produit //predict/soil, et Starlette ne
+###    normalise pas les doubles barres (404 sur chaque appel).
+###
+### ⭐ Notez recordedAt dans @readingRecordedAt : le bloc 8.1 s'en sert.
+POST {{api}}/ingest/readings
+X-Device-Key: {{deviceKey}}
+Content-Type: application/json
+
+{
+  "technicalId": "ESP32-PROD-01",
+  "temperature": 31.5,
+  "temperatureSol": 27.2,
+  "humiditeSol": 18.0,
+  "humiditeAir": 42.0,
+  "ph": 6.4,
+  "azote": 22.0,
+  "phosphore": 15.0,
+  "potassium": 28.0,
+  "luminosite": 24000.0,
+  "pluviometrie": 0.0,
+  "conductiviteElectrique": 1.1,
+  "batteryLevel": 91,
+  "signalStrength": -68
+}
+
+### 4.3 — Un relevé aux sondes INCOMPLÈTES
+### ATTENDU : 201, diagnosed:true.
+### ⭐ LE TEST QUI COMPTE LE PLUS DANS CE FICHIER. Quatre mesures absentes —
+###    le cas ORDINAIRE, pas l'exception : toutes les métriques sont facultatives.
+###    Le microservice les impute et DÉGRADE sa confiance en proportion.
+###
+###    Vérifiez ensuite au bloc 5.1 que ce diagnostic porte reliable:false et
+###    n'a levé AUCUNE alerte. C'est le système qui refuse de conseiller sur des
+###    chiffres qu'il a fabriqués — et c'est le comportement voulu.
+###
+###    Si ce bloc rend skipReason:ML_INDISPONIBLE, le service d'inférence
+###    refuse encore les valeurs nulles : voir docs/ml-service/README.md.
+POST {{api}}/ingest/readings
+X-Device-Key: {{deviceKey}}
+Content-Type: application/json
+
+{
+  "technicalId": "ESP32-PROD-01",
+  "temperature": 30.8,
+  "humiditeSol": null,
+  "humiditeAir": null,
+  "ph": 6.3,
+  "azote": null,
+  "phosphore": null,
+  "potassium": 27.0,
+  "luminosite": null,
+  "batteryLevel": 90
+}
+
+### 4.4 — Le même relevé, immédiatement
+### ATTENDU : 201, diagnosed:false, skipReason: CONDITIONS_STABLES.
+### ⭐ Le régulateur : intervalle minimal de 5 min ET aucune variation notable.
+###    Le relevé est TOUJOURS enregistré — c'est le diagnostic qui est écarté.
+POST {{api}}/ingest/readings
+X-Device-Key: {{deviceKey}}
+Content-Type: application/json
+
+{
+  "technicalId": "ESP32-PROD-01",
+  "temperature": 30.8,
+  "humiditeSol": null,
+  "ph": 6.3,
+  "potassium": 27.0,
+  "batteryLevel": 90
+}
+
+### 4.5 — Mauvaise clé d'ingestion
+### ATTENDU : 401. La comparaison est en temps constant (anti-timing).
+POST {{api}}/ingest/readings
+X-Device-Key: mauvaise-cle
+Content-Type: application/json
+
+{ "technicalId": "ESP32-PROD-01", "temperature": 28.0 }
+
+
+### ============================================================
+### 5. CE QUE LE SYSTÈME A CONCLU
+### ============================================================
+
+### 5.1 — Les diagnostics de la parcelle
+### ATTENDU : 200, au moins deux entrées.
+### ⭐ Comparez les deux : celui du 4.2 (mesures complètes) doit porter une
+###    confiance nettement supérieure à celui du 4.3 (quatre imputations).
+### ⭐ Recopiez l'id du diagnostic du 4.2 dans @diagnosticId.
+GET {{api}}/diagnosis?plotId={{plotId}}&limit=10
+Authorization: Bearer {{token}}
+
+### 5.2 — Pourquoi ce conseil ? La justification
+### ATTENDU : 200. Chaque recommandation porte un `rationale` rédigé, avec
+### measureField, observedValue, thresholdValue et l'écart.
+### ⭐ Rien n'est recalculé : tout vient des colonnes de traçabilité. Le conseil
+###    est justifié TEL QU'IL A ÉTÉ ÉMIS, même si un seuil a changé depuis.
+GET {{api}}/diagnosis/{{diagnosticId}}/explain
+Authorization: Bearer {{token}}
+
+### 5.3 — Les recommandations
+### ATTENDU : 200, déjà TRIÉES par priorité (ARBITRAGE en tête à priorité égale).
+### ⭐ SUR UNE PARCELLE PLUVIALE : aucun conseil ne doit dire « irriguez » tout
+###    court. IrrigationAdapter les reformule en paillage, ombrage, binage — le
+###    constat reste vrai, seule la réponse change. Un « irriguez » nu ici est un
+###    défaut à signaler.
+### ⭐ Recopiez l'id d'un conseil ACTIVE de priorité HAUTE dans @recommendationId.
+GET {{api}}/recommendations?plotId={{plotId}}&status=ACTIVE&sort=priority,asc
+Authorization: Bearer {{token}}
+
+### 5.4 — Les alertes
+### ATTENDU : 200. Une alerte n'est levée que si le diagnostic est FIABLE
+### (confiance ≥ 0,60) ET qu'au moins un conseil est HAUTE.
+### ⭐ Le diagnostic du 4.3, dégradé par l'imputation, ne doit avoir levé
+###    AUCUNE alerte. C'est la boucle complète : le microservice dit qu'il a
+###    fabriqué des valeurs, la confiance en tient compte, et le moteur se tait.
+GET {{api}}/alerts?plotId={{plotId}}&openOnly=true
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 6. SANTÉ DES SONDES — le seul angle mort qui produit un conseil NUISIBLE
+###
+### Une sonde en panne renvoie rarement une valeur absurde. Elle se fige, ou
+### elle dérive, en restant dans des valeurs parfaitement crédibles. La
+### plausibilité n'attrape que l'absurde ; c'est ce contrôle-ci qui attrape le
+### reste.
+###
+### ⚠️ Envoyez le bloc 6.1 SIX FOIS, avec la même valeur exacte à chaque fois.
+### ============================================================
+
+### 6.1 — Valeur FIGÉE (à rejouer six fois)
+### ATTENDU : aux premiers envois, sensorHealth SAINE ou SUSPECTE.
+###           au sixième, sensorHealth DEFAILLANTE et
+###           skipReason SONDE_DEFAILLANTE — le diagnostic est INHIBÉ.
+### ⭐ Mieux vaut ne rien conseiller que conseiller faux. Une mesure physique
+###    réelle varie toujours au moins sur sa dernière décimale ; six valeurs
+###    rigoureusement identiques ne sont plus un phénomène naturel.
+POST {{api}}/ingest/readings
+X-Device-Key: {{deviceKey}}
+Content-Type: application/json
+
+{
+  "technicalId": "ESP32-PROD-01",
+  "temperature": 29.0,
+  "humiditeSol": 33.3,
+  "humiditeAir": 55.0,
+  "ph": 6.5,
+  "azote": 30.0,
+  "phosphore": 20.0,
+  "potassium": 30.0,
+  "luminosite": 18000.0
+}
+
+### 6.2 — L'alerte TECHNIQUE
+### ATTENDU : 200, une alerte category:TECHNIQUE, level:ELEVEE.
+### ⭐ ELEVEE et non CRITIQUE : la parcelle n'est pas en danger, c'est la
+###    surveillance qui l'est. Réserver le critique à ce qui menace la culture
+###    préserve son sens.
+### ⭐ sensorHealthReason est rédigé pour l'écran du technicien : il dit QUELLE
+###    sonde changer.
+GET {{api}}/alerts?plotId={{plotId}}&category=TECHNIQUE&openOnly=true
+Authorization: Bearer {{token}}
+
+### 6.3 — Un relevé NORMAL après la panne
+### ATTENDU : sensorHealth revient à SAINE, et l'alerte TECHNIQUE SE REFERME
+### toute seule (rejouez 6.2 : elle ne doit plus être ouverte).
+### ⭐ Sans cela, une sonde remplacée laisserait un signalement que plus rien ne
+###    justifie — et le technicien apprendrait à ignorer une liste qui ne se
+###    vide jamais.
+POST {{api}}/ingest/readings
+X-Device-Key: {{deviceKey}}
+Content-Type: application/json
+
+{
+  "technicalId": "ESP32-PROD-01",
+  "temperature": 28.7,
+  "humiditeSol": 46.2,
+  "humiditeAir": 61.0,
+  "ph": 6.42,
+  "azote": 38.5,
+  "phosphore": 21.3,
+  "potassium": 31.7,
+  "luminosite": 17400.0
+}
+
+
+### ============================================================
+### 7. LA BOUCLE : conseil → action → effet
+###
+### C'est le parcours qui donne sa valeur au système : il montre que le conseil
+### a été suivi, et ce qu'il a produit.
+### ============================================================
+
+### 7.1 — Déclarer l'intervention qui suit le conseil
+### ATTENDU : 201. Et surtout : LE CONSEIL BASCULE EN « APPLIQUEE » TOUT SEUL.
+### ⭐ Ne demandez pas les deux à l'utilisateur. Le bon parcours est un bouton
+###    « j'ai appliqué ce conseil » qui pré-remplit ce formulaire.
+### ⭐ Recopiez id dans @interventionId.
+POST {{api}}/interventions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plotId": "{{plotId}}",
+  "recommendationId": "{{recommendationId}}",
+  "type": "IRRIGATION",
+  "product": "Arrosage manuel",
+  "dose": 12.5,
+  "unit": "mm",
+  "cost": 8000,
+  "weatherNote": "Ciel couvert, sol ressuyé",
+  "note": "Suite au conseil de stress hydrique"
+}
+
+### 7.2 — Le conseil a-t-il bien basculé ?
+### ATTENDU : status APPLIQUEE sur le conseil du 5.3.
+GET {{api}}/recommendations?plotId={{plotId}}
+Authorization: Bearer {{token}}
+
+### 7.3 — Mesurer l'effet
+### ATTENDU : 200, comparaison des 48 h avant / 48 h après.
+### ⭐ SUR UNE INSTANCE NEUVE, les fenêtres seront quasi vides et le verdict
+###    INDETERMINE — c'est normal, pas un défaut. Ce qui se vérifie ici, c'est
+###    que `limitation` est TOUJOURS renseigné : « cet écart constate une
+###    évolution, il n'établit pas une cause ». Une pluie survenue dans la même
+###    fenêtre produirait le même chiffre.
+GET {{api}}/interventions/{{interventionId}}/effect
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 8. LE TEMPS — relire, rejouer, projeter
+### ============================================================
+
+### 8.1 — Que voyait le système à cet instant ?
+### ATTENDU : 200. Remplacez `at` par @readingRecordedAt (bloc 4.2).
+###   · readingSelection  EXACT
+###   · alignment         SUR_CE_RELEVE si ce relevé a produit le diagnostic,
+###                       EN_VIGUEUR sinon — et EN_VIGUEUR est le cas ORDINAIRE
+### ⭐ Ne les confondez pas : EN_VIGUEUR signifie que le diagnostic affiché n'a
+###    PAS été produit par les mesures affichées. L'attribuer au relevé serait
+###    faux.
+GET {{api}}/diagnosis/at?plotId={{plotId}}&at=2026-07-30T10:00:00Z&toleranceMinutes=1440
+Authorization: Bearer {{token}}
+
+### 8.2 — Un instant ANTÉRIEUR à tout relevé
+### ATTENDU : 200 (PAS une 500), readingSelection AUCUN, limitation renseignée
+### qui invite à élargir toleranceMinutes.
+GET {{api}}/diagnosis/at?plotId={{plotId}}&at=2020-01-01T00:00:00Z
+Authorization: Bearer {{token}}
+
+### 8.3 — Rejouer un diagnostic avec la connaissance d'AUJOURD'HUI
+### ATTENDU : 200. identical:true tant que rien n'a été modifié dans
+### /knowledge — et c'est l'information la plus fréquente ET la plus rassurante.
+### ⭐ Rien n'est écrit : ni diagnostic, ni recommandation, ni alerte. Le rejeu
+###    ne pollue ni la chronologie ni le taux de suivi des conseils.
+GET {{api}}/diagnosis/{{diagnosticId}}/replay
+Authorization: Bearer {{token}}
+
+### 8.4 — Le calendrier prévisionnel
+### ATTENDU : 200. La SEULE vue du système qui annonce au lieu de constater.
+###   · nextStage   porte le « dans N jours » d'un bandeau
+###   · daysUntil   NÉGATIF sur une phase déjà commencée
+### ⭐ limitation doit être affiché À CÔTÉ des dates : ce sont des projections
+###    sur des proportions de cycle indicatives.
+GET {{api}}/crops/{{cropId}}/calendar
+Authorization: Bearer {{token}}
+
+### 8.5 — Sur quoi le système me juge-t-il ?
+### ATTENDU : 200, tous les stades du cycle, futurs compris.
+### ⭐ `origin` est le champ qui fait la valeur de cette vue : GENERALE = seuil
+###    de la culture, STADE = propre à cette phase. Sans lui, l'exploitant voit
+###    le système « changer d'avis » quand le seuil change de stade.
+### ⭐ max:null sur les nutritifs est NORMAL : un excès d'azote se lit sur le
+###    déséquilibre NPK, pas sur un plafond par élément.
+GET {{api}}/crops/{{cropId}}/thresholds
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 9. CONDUIRE LA CAMPAGNE — l'itinéraire technique
+###
+### Le système savait ce qui a été FAIT et ce qu'il CONSEILLE. Il ne savait rien
+### de ce qui était PRÉVU — et sans ce terme, une opération oubliée est
+### indiscernable d'une opération jamais planifiée.
+### ============================================================
+
+### 9.1 — Planifier une opération
+### ATTENDU : 201.
+###   · resolvedDate  CALCULÉE (plantingDate + 45 j), absente de la base
+###   · late          false si la date est à venir
+### ⭐ Préférez daysAfterPlanting à plannedOn : c'est la forme qui SURVIT au
+###    clonage vers une campagne plantée un autre jour.
+### ⭐ Recopiez id dans @operationId.
+POST {{api}}/crops/{{cropId}}/itinerary
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "FERTILISATION",
+  "label": "Deuxième apport d'azote",
+  "daysAfterPlanting": 45,
+  "growthStage": "FLORAISON",
+  "product": "Urée 46 %",
+  "dose": 12.5,
+  "unit": "kg/ha",
+  "estimatedCost": 18000
+}
+
+### 9.2 — Une opération SANS datation
+### ATTENDU : 400, « une opération qu'on ne sait pas placer dans le calendrier
+### ne peut pas être suivie ». Test de règle métier.
+POST {{api}}/crops/{{cropId}}/itinerary
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "type": "TRAITEMENT", "label": "Sans date" }
+
+### 9.3 — L'itinéraire complet
+### ATTENDU : 200.
+###   · matchConfirmed:false  → HYPOTHÈSE du système, recalculée à chaque appel
+###   · matchGapDays          SIGNÉ — négatif = fait en avance
+###   · totalEstimatedCost    le budget prévisionnel
+### ⭐ L'irrigation du bloc 7.1 peut être rapprochée automatiquement si son type
+###    correspond. Un rapprochement inféré PEUT CHANGER d'un appel à l'autre :
+###    ne le présentez pas comme acquis.
+### ⭐ completionRate:null sur un itinéraire vide ≠ 0 % — rien n'a été planifié,
+###    ce n'est pas « rien n'a été fait ».
+GET {{api}}/crops/{{cropId}}/itinerary
+Authorization: Bearer {{token}}
+
+### 9.4 — Confirmer un rapprochement à la main
+### ATTENDU : 200, matchConfirmed:true, matchConfidence MANUELLE.
+### ⭐ Le SEUL chemin par lequel un rapprochement s'écrit en base. Les
+###    rapprochements automatiques restent recalculés : un mauvais appariement
+###    persisté se propage au coût constaté et au clonage, là où un mauvais
+###    appariement recalculé disparaît dès que la donnée s'améliore.
+### ⭐ Omettre interventionId DÉFAIT la confirmation — prévoyez ce geste.
+POST {{api}}/crops/{{cropId}}/itinerary/{{operationId}}/match?interventionId={{interventionId}}
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 10. RÉCOLTE, ÉCONOMIE, CLÔTURE
+### ============================================================
+
+### 10.1 — Saisir une récolte
+### ATTENDU : 201, grossRevenue et yieldPerHectare calculés.
+### ⭐ On saisit un PRIX UNITAIRE, jamais un montant total : le total se
+###    recalcule, un prix unitaire perdu ne se retrouve pas — et c'est lui qui
+###    permet de comparer deux campagnes de volumes différents.
+POST {{api}}/harvests
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plotId": "{{plotId}}",
+  "cropId": "{{cropId}}",
+  "quantity": 1840,
+  "unit": "kg",
+  "quality": "BONNE",
+  "harvestedAt": "2026-07-28",
+  "unitPrice": 500,
+  "currency": "XAF"
+}
+
+### 10.2 — Le bilan économique
+### ATTENDU : 200. margin, marginPerHectare, yieldPerHectare, uptakeRate.
+### ⭐ limitation ET missingData sont TOUJOURS renseignés et doivent être
+###    affichés À CÔTÉ des chiffres. « Conseils suivis / rendement » est un
+###    constat, pas une démonstration — le sol, la variété, la météo et
+###    l'attention portée à la parcelle varient ensemble.
+GET {{api}}/plots/{{plotId}}/economics
+Authorization: Bearer {{token}}
+
+### 10.3 — Clôturer la campagne
+### ATTENDU : 200, un bilan FIGÉ à cet instant.
+### ⭐ Le motif est OBLIGATOIRE : c'est lui qui rend l'historique interprétable.
+###    Un rendement nul après RECOLTE_NORMALE signale un problème agronomique ;
+###    le même après PERTE_CLIMATIQUE ne signale que la météo.
+POST {{api}}/crops/{{cropId}}/close
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "reason": "RECOLTE_NORMALE",
+  "actualEndDate": "2026-07-29",
+  "note": "Rendement conforme."
+}
+
+### 10.4 — Rejouer la clôture
+### ATTENDU : 400, « une clôture ne se rejoue pas ». Test de règle métier.
+POST {{api}}/crops/{{cropId}}/close
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "reason": "ABANDON" }
+
+### 10.5 — Le bilan arrêté ET le bilan vivant, côte à côte
+### ATTENDU : 200, frozenEconomics + currentEconomics + divergenceStatement.
+### ⭐ divergenceStatement n'est JAMAIS nul, y compris quand rien n'a bougé :
+###    « identique à celui arrêté à la clôture » est une information rassurante,
+###    et un blanc obligerait l'utilisateur à l'interpréter.
+### ⭐ Pour voir la divergence apparaître : saisissez une seconde récolte (10.1)
+###    puis rappelez ce bloc. La suppression d'une récolte est RÉELLE dans ce
+###    projet — c'est exactement ce que cette ligne rend visible.
+GET {{api}}/crops/{{cropId}}/closure
+Authorization: Bearer {{token}}
+
+### 10.6 — Le journal des révisions
+### ATTENDU : 200. CREATION, MODIFICATION, STADE_RECALCULE, CLOTURE.
+### ⭐ humanAction:false distingue les STADE_RECALCULE — c'est le temps qui
+###    passe, pas une décision. Repliez-les par défaut : les afficher au même
+###    rang ferait porter à un utilisateur des changements qui ne sont pas les
+###    siens.
+GET {{api}}/crops/{{cropId}}/journal
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 11. RELANCER — succession, comparaison, clonage
+### ============================================================
+
+### 11.1 — Cloner la campagne pour l'an prochain
+### ATTENDU : 201, une nouvelle campagne.
+### ⭐ seedLot n'est JAMAIS repris — un lot est consommé, et le reporter serait
+###    un mensonge de traçabilité sur le champ dont on a précisément besoin le
+###    jour où l'on cherche l'origine d'un problème de levée.
+### ⭐ L'itinéraire est décalé : les opérations en J+n telles quelles, les dates
+###    fermes du même nombre de jours que la plantation.
+POST {{api}}/crops/{{cropId}}/clone
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "plantingDate": "2027-04-05",
+  "seedLot": "LOT-2027-B03",
+  "copyItinerary": true
+}
+
+### 11.2 — L'histoire de la parcelle
+### ATTENDU : 200.
+###   · campaigns             de la plus récente à la plus ancienne
+###   · endDateIsEstimated    à marquer visuellement quand true
+###   · monocultureWarnings   deux TOMATE de suite ⇒ un avertissement
+### ⭐ La monoculture est un signal agronomique réel : elle épuise les mêmes
+###    réserves du sol et concentre les ravageurs propres à l'espèce. Le système
+###    disposait de l'information depuis toujours et ne la disait à personne.
+GET {{api}}/plots/{{plotId}}/succession
+Authorization: Bearer {{token}}
+
+### 11.3 — Cette campagne contre la précédente
+### ATTENDU : 200. Sur la campagne clonée : comparable:true.
+### ⭐ better est un TRI-ÉTAT. Les charges portent TOUJOURS better:null — des
+###    charges qui montent peuvent monter pour de bonnes raisons, un traitement
+###    de plus qui sauve la récolte. Ne repliez pas null sur false.
+### ⭐ metrics vide avec comparable:true ⇒ un côté n'a pas de bilan figé ;
+###    missingData le dit.
+GET {{api}}/crops/{{cropId}}/compare-previous
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 12. LES VUES COMPOSÉES — ce que voit l'exploitant
+### ============================================================
+
+### 12.1 — Le tableau de bord
+### ATTENDU : 200, une seule requête pour tout l'écran d'accueil.
+### ⭐ Ne bouclez JAMAIS sur /plots puis /alerts par parcelle.
+GET {{api}}/overview/farm?userId={{adminUserId}}
+Authorization: Bearer {{token}}
+
+### 12.2 — L'état détaillé d'une parcelle
+### ATTENDU : 200. overallStatus, indicateurs, risques, alertes ouvertes,
+### dernier diagnostic, résumé en français. Suffit à l'écran complet.
+GET {{api}}/overview/plots/{{plotId}}
+Authorization: Bearer {{token}}
+
+### 12.3 — La chronologie unifiée
+### ATTENDU : 200, sept sources fusionnées et triées.
+### ⭐ truncated:true ⇒ la chronologie est INCOMPLÈTE et totalEntries n'est pas
+###    le total réel. Une chronologie plafonnée se lisait auparavant exactement
+###    comme une chronologie complète.
+GET {{api}}/plots/{{plotId}}/timeline?size=30
+Authorization: Bearer {{token}}
+
+### 12.4 — La série agrégée
+### ATTENDU : 200, min/moy/max par intervalle.
+### ⭐ Une mesure jamais relevée est ABSENTE de `measures`, pas à zéro :
+###    « pas de donnée » et « zéro » ne se confondent pas.
+GET {{api}}/plots/{{plotId}}/history?granularity=DAY
+Authorization: Bearer {{token}}
+
+
+### ============================================================
+### 13. LE CLOISONNEMENT — la vérification la plus importante
+###
+### ownership.enabled=true en production. Ce bloc vérifie qu'il PROTÈGE sans
+### ENFERMER — et c'est le point qu'on ne peut pas vérifier en lisant le code.
+### ============================================================
+
+### 13.1 — Créer un exploitant ordinaire
+### ATTENDU : 201, rôle EXPLOITANT par défaut (moindre privilège).
+### ⭐ Notez userCode et le mot de passe généré : il n'est plus jamais rendu.
+POST {{api}}/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "email": "exploitant@bilanga.cg",
+  "firstname": "Aline",
+  "lastname": "N.",
+  "phone": "06 123 45 67",
+  "generatePassword": true
+}
+
+### 13.2 — Se connecter en tant qu'exploitant
+### ⭐ Recopiez son accessToken dans une variable @tokenExploitant que vous
+###    ajouterez en tête de fichier.
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "exploitant@bilanga.cg",
+  "password": "REMPLACEZ-PAR-LE-MOT-DE-PASSE-GENERE"
+}
+
+### 13.3 — L'exploitant demande LA PARCELLE DE L'ADMIN
+### ATTENDU : 403, ou une liste VIDE selon la route.
+### ⭐⭐ C'EST LA VÉRIFICATION QUI COMPTE LE PLUS DE TOUT CE FICHIER. Si cet
+###     appel renvoie la parcelle, le cloisonnement ne fonctionne pas et
+###     n'importe qui peut consulter n'importe quelle exploitation.
+###     Remplacez {{token}} par {{tokenExploitant}}.
+GET {{api}}/plots/{{plotId}}
+Authorization: Bearer {{token}}
+
+### 13.4 — L'exploitant crée SA parcelle
+### ATTENDU : 201. Il doit pouvoir travailler chez lui.
+### ⭐ Le cloisonnement doit PROTÉGER sans ENFERMER. Un exploitant qui ne peut
+###    rien faire est un cloisonnement raté, pas un cloisonnement réussi.
+###    Remplacez {{token}} par {{tokenExploitant}}.
+POST {{api}}/plots
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Parcelle de l'exploitant",
+  "soilType": "LIMONEUX",
+  "irrigationType": "MANUEL",
+  "area": 0.6,
+  "status": "ACTIVE"
+}
+
+
+### ============================================================
+### 14. CE QU'IL FAUT AVOIR VÉRIFIÉ EN SORTANT
+###
+###  1.2  bootstrap rejoué           → 409          la porte se referme seule
+###  2.3  /auth/me sans jeton        → 401 AVEC CORPS   auto-admin bien coupé
+###  4.2  relevé complet             → diagnosed:true   la chaîne entière marche
+###  4.3  sondes incomplètes         → diagnosed:true, confiance dégradée
+###  5.3  parcelle PLUVIALE          → aucun « irriguez » nu
+###  5.4  diagnostic peu fiable      → AUCUNE alerte levée
+###  6.1  six valeurs figées         → DEFAILLANTE + alerte TECHNIQUE
+###  6.3  relevé normal ensuite      → l'alerte SE REFERME
+###  7.1  intervention liée          → le conseil passe APPLIQUEE tout seul
+###  8.2  instant hors données       → 200, pas 500
+### 10.4  clôture rejouée            → 400
+### 11.1  clonage                    → seedLot ABSENT
+### 13.3  parcelle d'autrui          → 403 ou liste vide
+### 13.4  parcelle propre            → 201
+###
+### Les deux dernières lignes ensemble sont la garantie de non-blocage : le
+### cloisonnement protège sans enfermer. C'est la seule propriété de ce fichier
+### qui ne se vérifie pas en lisant le code.
+### ============================================================
