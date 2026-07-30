@@ -164,7 +164,28 @@ bilanga:
   # Réception des relevés du matériel de terrain.
   # Vide ⇒ l'ingestion répond 503. Valorisée par profil.
   ingest:
-    device-key: ${BILANGA_INGEST_DEVICE_KEY:}
+    # ⚠️ CLÉ DE DÉMONSTRATION, et elle est dans un dépôt PUBLIC.
+    #
+    # Le défaut était VIDE, ce qui fermait l'ingestion : /ingest/readings
+    # répondait 503 tant que rien n'était configuré. Une porte fermée valait
+    # mieux qu'une porte sans serrure — mais le firmware et le simulateur
+    # avaient alors besoin d'une valeur transmise hors du dépôt, à recopier de
+    # part et d'autre, et à re-recopier à chaque environnement.
+    #
+    # La même valeur vaut désormais dans les TROIS profils : un croquis Wokwi
+    # écrit contre localhost fonctionne contre la production sans qu'on touche
+    # à sa constante.
+    #
+    # CE QUE CELA OUVRE : quiconque lit ce fichier peut déposer des relevés sur
+    # n'importe quelle parcelle. Une mesure fabriquée n'est pas inerte — elle
+    # déclenche un diagnostic, produit des recommandations, peut lever une
+    # alerte, et fausse durablement l'analyse de tendance, qui régresse sur la
+    # série. La portée reste bornée : le boîtier NE CHOISIT PAS sa parcelle,
+    # elle se déduit de son identité matérielle.
+    #
+    # À refermer avant tout usage réel, sans changement de code :
+    #   heroku config:set BILANGA_INGEST_DEVICE_KEY="$(openssl rand -hex 24)"
+    device-key: ${BILANGA_INGEST_DEVICE_KEY:bilanga-demo-device-key-soutenance-2026}
     # false ⇒ n'importe quel appelant peut déposer un relevé, sans en-tête ni clé.
     # Prévu pour l'intégration du module IoT ; à remettre à true ensuite.
     require-device-key: ${BILANGA_INGEST_REQUIRE_DEVICE_KEY:true}

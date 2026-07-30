@@ -10,12 +10,19 @@
 
 bilanga:
   ingest:
-    # Clé de développement, connue et sans valeur de secret.
+    # ⚠️ La MÊME clé qu'en production, délibérément.
     #
-    # Sans elle, POST /ingest/readings répond 503 et TOUTE la chaîne capteur du
-    # projet est injoignable — c'est l'état dans lequel se trouvait le dépôt :
-    # la clé n'était déclarée nulle part.
-    device-key: ${BILANGA_INGEST_DEVICE_KEY:dev-device-key-change-me}
+    # Elle valait auparavant « dev-device-key-change-me » ici et autre chose
+    # ailleurs. Conséquence : un croquis Wokwi mis au point contre localhost
+    # échouait en 401 contre la production, pour une raison invisible dans le
+    # code du firmware — et la correction consistait à recopier une constante
+    # d'un environnement à l'autre, à chaque fois.
+    #
+    # Une valeur unique supprime cette manipulation. Elle n'affaiblit rien : la
+    # clé de production est de toute façon publique tant qu'elle sert à une
+    # démonstration, et l'ancienne valeur figure dans FORBIDDEN_IN_PROD de
+    # ConfigurationGuard — elle ne pouvait donc PAS servir en production.
+    device-key: ${BILANGA_INGEST_DEVICE_KEY:bilanga-demo-device-key-soutenance-2026}
 
     # Authentification des boîtiers LEVÉE en développement : le module IoT peut
     # émettre sans en-tête le temps de l'intégration.
