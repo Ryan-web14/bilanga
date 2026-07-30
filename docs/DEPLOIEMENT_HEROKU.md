@@ -149,15 +149,42 @@ heroku config:set \
   APP_CORS_ALLOWED_ORIGINS="https://votre-frontend.example"
 ```
 
-### 3.2 bis — La seule variable qui reste indispensable
+### 3.2 bis — 🎯 **Zéro variable obligatoire**
 
-```bash
-heroku config:set SPRING_PROFILES_ACTIVE=prod
+> **Mise à jour du 2026-07-30.** Après ce lot, un déploiement démarre et fonctionne
+> **sans poser une seule variable d'environnement**. C'était l'objectif d'une mise en
+> ligne de démonstration ; ce n'est pas celui d'une mise en production (§3.2).
+
+Le profil est porté par le `Procfile` lui-même :
+
+```
+web: java -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} -Dserver.port=$PORT $JAVA_OPTS -jar target/*.jar
 ```
 
-Sans elle, le profil `dev` s'applique : **auto-admin actif** (toute requête sans jeton est
-authentifiée comme administrateur), routes métier ouvertes, `DefaultAdminSeeder` qui crée
-un compte au mot de passe connu. L'application démarre — et c'est bien le problème.
+`${VAR:-defaut}` est une substitution du shell : le `Procfile` ne s'exécute que sur la
+plateforme, donc `prod` y est le bon défaut — et poser `SPRING_PROFILES_ACTIVE` continue
+de l'emporter si vous voulez déployer en `dev`.
+
+> **Pourquoi cela comptait.** Sans profil `prod`, c'est `dev` qui s'applique : **auto-admin
+> actif** (toute requête sans jeton authentifiée comme administrateur), routes métier
+> ouvertes, `DefaultAdminSeeder` qui crée un compte au mot de passe inscrit dans le dépôt.
+> L'application démarre normalement — et c'est précisément le problème : rien ne signale
+> que la porte est grande ouverte, sinon une ligne de journal.
+
+### 3.2 ter — Les défauts posés pour la démonstration
+
+| Réglage | Défaut en `prod` | Pourquoi celui-là |
+|---|---|---|
+| `bilanga.ml.base-url` | `https://bilanga-ml-587151bad5cb.herokuapp.com` | `localhost:8000` n'existe pas sur un dyno : le diagnostic serait vide **en silence** |
+| `spring.data.redis.timeout` | **200 ms** (au lieu de 2 s) | sans module Redis, chaque lecture de connaissance paierait le délai **sur le chemin critique de chaque diagnostic** |
+| `app.security.cors.*` | `*` | borné par `allowCredentials=false` |
+| `app.security.jwt.secret` | valeur de démonstration | ⚠️ **publique** — voir §3.2 |
+| `app.security.token-hash.secret` | valeur de démonstration | ⚠️ publique |
+| `bilanga.ingest.device-key` | valeur de démonstration | ⚠️ publique |
+
+> ⚠️ **`BILANGA_ML_BASE_URL` ne doit jamais porter de barre finale.** `MlHttpExchange`
+> concatène `baseUrl + "/predict/soil"` : une barre produit `//predict/soil`, que Starlette
+> ne normalise pas — 404 sur chaque appel, vérifié.
 
 ### 3.2 ter — Les deux leviers de secours
 

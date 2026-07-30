@@ -18,6 +18,23 @@ spring:
       hibernate:
         format_sql: false
 
+  data:
+    redis:
+      # ⚠️ DÉLAIS COURTS EN PRODUCTION, et ce n'est pas un réglage de confort.
+      #
+      # Sans module Redis provisionné, REDIS_URL est absente et le repli vise
+      # localhost:6379 — où rien n'écoute. Chaque lecture de connaissance paierait
+      # alors le délai de connexion AVANT de se rabattre sur Caffeine, et cette
+      # lecture est sur le chemin critique de CHAQUE diagnostic. À deux secondes,
+      # une démonstration paraîtrait en panne ; à deux cents millisecondes, l'échec
+      # est immédiat et invisible.
+      #
+      # Avec un module Redis, ces valeurs restent saines : un aller-retour vers un
+      # Redis voisin se compte en millisecondes, et une lenteur au-delà de 200 ms
+      # vaut mieux d'être contournée que subie.
+      timeout: ${SPRING_DATA_REDIS_TIMEOUT:200ms}
+      connect-timeout: ${SPRING_DATA_REDIS_CONNECT_TIMEOUT:200ms}
+
 app:
   dev-mode: false
   error:
@@ -104,6 +121,21 @@ app:
       secret: ${TOKEN_HASH_SECRET:bilanga-demo-token-hash-secret-soutenance-2026-a-remplacer}
 
 bilanga:
+
+  # Microservice d'inférence — l'instance déployée, et non localhost.
+  #
+  # Le défaut commun (http://localhost:8000) vaut pour le développement, où
+  # FastAPI tourne à côté du backend. Sur un dyno, chaque conteneur est isolé :
+  # localhost n'y désigne que lui-même, et rien n'écoute sur ce port. Le
+  # diagnostic se dégraderait proprement en ML_INDISPONIBLE — donc silencieusement
+  # vide, ce qui est le pire cas pour une démonstration.
+  #
+  # ⚠️ SANS BARRE FINALE. MlHttpExchange concatène « baseUrl + /predict/soil » :
+  # une barre produirait //predict/soil, que Starlette ne normalise pas — 404 sur
+  # chaque appel, vérifié.
+  ml:
+    base-url: ${BILANGA_ML_BASE_URL:https://bilanga-ml-587151bad5cb.herokuapp.com}
+
   ingest:
     # ⚠️ Clé de démonstration, même réserve que les secrets ci-dessus : elle est
     # publique. Quiconque la lit peut déposer des relevés fabriqués sur
