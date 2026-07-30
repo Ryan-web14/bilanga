@@ -124,6 +124,140 @@ heroku config:set BILANGA_ML_BASE_URL=https://bilanga-ml-587151bad5cb.herokuapp.
 - **TFLite** : bon choix. La vision répond en 1,3 s à chaud, là où le chargement de
   TensorFlow complet aurait flirté avec la coupure à 30 s d'Heroku.
 
+### 🔴 4. Parcelle sans type de sol — **422**
+
+`plots.soil_type` est **nullable** : seul `name` est obligatoire à la création d'une
+parcelle. Java envoie alors `"type_sol": null`, et la validation Pydantic le refuse.
+
+### 🟡 5. `culture` est strict sur la casse, lui aussi
+
+`"TOMATE"` → 400. Ce n'est **pas** un risque actif — Java envoie la forme de stockage,
+en minuscules — mais les deux colonnes catégorielles partagent le même défaut, et une
+seule normalisation les couvre toutes les deux.
+
+---
+
+## Le correctif complet
+
+Remplace la validation et le corps de `/predict/soil`. Testé contre les cinq cas relevés
+ci-dessus.
+
+```python
+from typing import Optional
+from pydantic import BaseModel
+
+FEATURES = ["temperature", "humidite_sol", "humidite_air", "ph",
+            "azote", "phosphore", "potassium", "luminosite",
+            "culture", "type_sol"]
+
+
+class SoilPayload(BaseModel):
+    """Tout est facultatif, DÉLIBÉRÉMENT.
+
+    Le backend déclare toutes les métriques facultatives à l'ingestion : un
+    boîtier qui ne porte pas toutes les sondes est le cas ORDINAIRE. Et
+    `type_sol` est nullable en base — une parcelle n'a pas à déclarer son sol.
+
+    extra=ignore : le backend envoie trois clés de plus depuis la V16
+    (temperature_sol, pluviometrie, conductivite_electrique). Les refuser
+    casserait tout ; les ignorer est le bon comportement tant que le modèle
+    n'est pas réentraîné avec elles.
+    """
+    temperature:  Optional[float] = None
+    humidite_sol: Optional[float] = None
+    humidite_air: Optional[float] = None
+    ph:           Optional[float] = None
+    azote:        Optional[float] = None
+    phosphore:    Optional[float] = None
+    potassium:    Optional[float] = None
+    luminosite:   Optional[float] = None
+    culture:      Optional[str]   = None
+    type_sol:     Optional[str]   = None
+
+    model_config = {"extra": "ignore"}
+
+
+# ⚠️ À REMPLACER par les médianes de VOTRE jeu d'entraînement : ce sont les
+# seules valeurs qui ne déplacent pas la distribution. Imputer 0 serait pire
+# que ne rien faire — un pH de 0 est une acidité extrême, et le modèle rendrait
+# un diagnostic FAUX avec l'assurance d'un diagnostic juste.
+NUMERIC_DEFAULTS = {
+    "temperature": 26.0, "humidite_sol": 45.0, "humidite_air": 70.0,
+    "ph": 6.5, "azote": 40.0, "phosphore": 20.0,
+    "potassium": 30.0, "luminosite": 15000.0,
+}
+CATEGORICAL_DEFAULTS = {"culture": "tomate", "type_sol": "limoneux"}
+
+
+def _match_category(value, encoder):
+    """Rend une valeur CONNUE de l'encodeur, ou None.
+
+    Le backend envoie `type_sol` en MAJUSCULES — la contrainte CHECK de la V11
+    le lui impose — et `culture` en minuscules. Exiger notre casse ferait
+    échouer 100 % des diagnostics capteur.
+    """
+    if value is None:
+        return None
+    known = list(encoder.classes_)
+    raw = str(value).strip()
+    for candidate in (raw, raw.lower(), raw.upper(), raw.capitalize()):
+        if candidate in known:
+            return candidate
+    return None
+
+
+@app.post("/predict/soil")
+async def predict_soil(payload: SoilPayload):
+    if not _soil:
+        raise HTTPException(503, "Modèle tabulaire non chargé.")
+
+    model, feat_enc = _soil["model"], _soil["feature_encoders"]
+    target_enc = _soil["target_encoder"]
+
+    data = payload.model_dump()
+    row, imputed = {}, []
+
+    for feature, default in NUMERIC_DEFAULTS.items():
+        value = data.get(feature)
+        if value is None:
+            row[feature] = default
+            imputed.append(feature)
+        else:
+            row[feature] = float(value)
+
+    for feature in ("culture", "type_sol"):
+        encoder = feat_enc[feature]
+        matched = _match_category(data.get(feature), encoder)
+        if matched is None:
+            # Repli plutôt que refus : une valeur discutable vaut mieux qu'un
+            # diagnostic perdu, et l'imputation dégrade déjà la confiance.
+            matched = (_match_category(CATEGORICAL_DEFAULTS[feature], encoder)
+                       or list(encoder.classes_)[0])
+            imputed.append(feature)
+        row[feature] = int(encoder.transform([matched])[0])
+
+    df = pd.DataFrame([row])[FEATURES]
+
+    pred = model.predict(df)[0]
+    proba = model.predict_proba(df)[0]
+    label = target_enc.inverse_transform([pred])[0]
+
+    confidence = float(np.max(proba))
+
+    # ⚠️ LE POINT QUI FERME LA BOUCLE. Sous 0,60, ConfidenceEvaluator marque le
+    # diagnostic NON FIABLE côté Java et AUCUNE alerte n'est levée. Imputer sans
+    # dégrader la confiance serait pire que refuser : on obtiendrait un
+    # diagnostic faux, présenté avec l'assurance d'un diagnostic juste.
+    if imputed:
+        confidence *= max(0.4, 1.0 - 0.15 * len(imputed))
+
+    return {
+        "category": str(label),
+        "confidence": confidence,
+        "imputedFeatures": imputed,   # ignoré par le backend, utile à l'humain
+    }
+```
+
 ### Rejouer ces tests après correction
 
 ```bash
