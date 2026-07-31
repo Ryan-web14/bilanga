@@ -82,8 +82,20 @@ public class EmailNotificationChannel implements NotificationChannel {
 
     private final BilangaProperties.Email config;
 
-    public EmailNotificationChannel(BilangaProperties.Email config) {
+    /**
+     * Transport Microsoft Graph, employé de préférence à SMTP quand il est configuré.
+     * Le même que celui des codes de connexion : un seul chemin d'envoi à surveiller.
+     */
+    private final com.sni.bilanga.mailService.baseService.DefaultEmailSender graph;
+
+    public EmailNotificationChannel(BilangaProperties.Email config,
+                                    com.sni.bilanga.mailService.baseService.DefaultEmailSender graph) {
         this.config = config;
+        this.graph = graph;
+    }
+
+    private static boolean notBlank(String value) {
+        return value != null && !value.isBlank();
     }
 
     @Override
@@ -101,18 +113,44 @@ public class EmailNotificationChannel implements NotificationChannel {
      */
     @Override
     public boolean isAvailable() {
-        return config.isEnabled() && config.getHost() != null && !config.getHost().isBlank();
+        if (!config.isEnabled()) {
+            return false;
+        }
+        // Deux transports possibles, un seul suffit. Graph d'abord : c'est le seul qui
+        // fonctionne sur un locataire Microsoft moderne, où l'authentification basique
+        // SMTP est désactivée.
+        return graph.isConfigured() || notBlank(config.getHost());
     }
 
     @Override
     public void send(NotificationOutbox notification) {
         if (!isAvailable()) {
             throw new IllegalStateException(
-                    "Canal courriel non configuré : bilanga.notification.email.host est vide.");
+                    "Canal courriel non configuré : ni Microsoft Graph "
+                            + "(bilanga.notification.email.graph.*) ni SMTP "
+                            + "(bilanga.notification.email.host) ne le sont.");
         }
         String recipient = notification.getRecipient();
         if (recipient == null || recipient.isBlank()) {
             throw new IllegalArgumentException("Aucune adresse de destinataire.");
+        }
+
+        // ------------------------------------------------------------
+        // Graph prime sur SMTP quand il est configuré.
+        //
+        // LE DÉFAUT CORRIGÉ. Ce canal ne parlait que SMTP, avec AUTH LOGIN. Or
+        // Microsoft 365 a désactivé l'authentification basique SMTP sur la plupart des
+        // locataires : sur un locataire moderne, l'hôte reste vide faute de pouvoir
+        // s'authentifier, isAvailable() rend donc faux, et AUCUNE ALERTE NE PART PAR
+        // COURRIEL — sans que rien ne le signale, puisqu'un canal indisponible n'est
+        // pas un canal en échec.
+        //
+        // Le service de courrier Graph existait déjà, mais ne servait qu'aux codes de
+        // connexion et aux réinitialisations. Les alertes l'ignoraient.
+        // ------------------------------------------------------------
+        if (graph.isConfigured()) {
+            graph.send(recipient, notification.getSubject(), notification.getBody(), false);
+            return;
         }
 
         try (Socket socket = new Socket(config.getHost(), config.getPort())) {
