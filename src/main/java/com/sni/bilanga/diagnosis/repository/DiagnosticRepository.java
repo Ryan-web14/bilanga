@@ -72,7 +72,10 @@ public interface DiagnosticRepository extends JpaRepository<Diagnostic, Long> {
                        ))
                   ))                 as distance_km,
                   d.diagnosed_at     as diagnosed_at,
-                  d.confidence_score as confidence_score
+                  d.confidence_score as confidence_score,
+                  -- Dernière colonne, et non première : le moteur lit les autres
+                  -- par indice, et un décalage y serait silencieux.
+                  n.id               as plot_id
            from diagnostics d
            join plots n on n.id = d.plot_id
            where n.id <> :excludedPlotId

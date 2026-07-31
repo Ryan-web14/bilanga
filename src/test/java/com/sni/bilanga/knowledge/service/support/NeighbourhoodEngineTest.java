@@ -250,6 +250,33 @@ class NeighbourhoodEngineTest {
                     .contains("3 parcelles voisines");
         }
 
+        /**
+         * Le défaut constaté en production : « sur 24 parcelles voisines » annoncé
+         * sur une exploitation qui n'en possède que quatre.
+         *
+         * <p>La requête rend un diagnostic par ligne, et une parcelle suivie depuis
+         * deux semaines en compte des dizaines. Compter les lignes gonflait donc le
+         * chiffre d'un facteur arbitraire. Un décompte que l'exploitant peut
+         * démentir d'un coup d'œil décrédibilise le conseil entier, y compris la
+         * part qui était juste.
+         */
+        @Test
+        @DisplayName("plusieurs diagnostics d'une même parcelle comptent pour une parcelle")
+        void repeatedDiagnosesOfOnePlotCountOnce() {
+            outbreaks(List.<Object[]>of(
+                    row("Late_blight", "tomate", "Voisin A", 0.4, hoursAgo(3)),
+                    row("Late_blight", "tomate", "Voisin A", 0.4, hoursAgo(5)),
+                    row("Late_blight", "tomate", "Voisin A", 0.4, hoursAgo(7)),
+                    row("Late_blight", "tomate", "Voisin B", 0.9, hoursAgo(6))));
+
+            String content = engine.assess(geolocated(), Set.of()).getFirst().getContent();
+
+            assertThat(content).contains("2 parcelles voisines");
+            assertThat(content)
+                    .as("le nombre de lignes ne doit jamais transparaître")
+                    .doesNotContain("4 parcelles");
+        }
+
         @Test
         @DisplayName("la distance annoncée est celle du foyer le PLUS PROCHE")
         void nearestDistanceIsReported() {
@@ -433,9 +460,16 @@ class NeighbourhoodEngineTest {
     }
 
     /** Une ligne telle que la requête native la rend. */
+    /**
+     * Septième colonne : l'identifiant de la parcelle voisine.
+     *
+     * <p>Il est dérivé du nom pour que deux lignes de la même parcelle portent le
+     * même identifiant, ce qu'exige le décompte de parcelles distinctes.
+     */
     private static Object[] row(String diseaseCode, String cropName, String plotName,
                                 double distanceKm, Instant diagnosedAt) {
-        return new Object[]{diseaseCode, cropName, plotName, distanceKm, diagnosedAt, 0.92};
+        return new Object[]{diseaseCode, cropName, plotName, distanceKm, diagnosedAt, 0.92,
+                            (long) plotName.hashCode()};
     }
 
     private static Instant hoursAgo(int hours) {

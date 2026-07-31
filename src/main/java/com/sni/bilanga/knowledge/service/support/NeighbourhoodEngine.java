@@ -168,9 +168,12 @@ public class NeighbourhoodEngine {
             double distanceKm = asDouble(row[3], config.getRadiusKm());
             Instant diagnosedAt = asInstant(row[4]);
 
+            Long plotId = asLong(row.length > 6 ? row[6] : null);
+
             byDisease.computeIfAbsent(diseaseCode,
                             code -> new Outbreak(code, cropName))
-                    .record(plotName, distanceKm, diagnosedAt, weightOf(distanceKm, diagnosedAt));
+                    .record(plotId, plotName, distanceKm, diagnosedAt,
+                            weightOf(distanceKm, diagnosedAt));
         }
 
         List<RecommendationItem> items = new ArrayList<>();
@@ -309,7 +312,17 @@ public class NeighbourhoodEngine {
         private final String diseaseCode;
         private final String cropName;
 
-        private int plotCount;
+        /**
+         * Les parcelles distinctes, et non les lignes.
+         *
+         * <p>La requête rend un diagnostic par ligne : une parcelle voisine suivie
+         * depuis deux semaines en compte des dizaines. Compter les lignes annonçait
+         * « sur 24 parcelles voisines » là où il y en avait deux, sur une
+         * exploitation qui n'en possède que quatre. Un chiffre invérifiable de
+         * l'aveu même de celui qui le lit décrédibilise le conseil entier.
+         */
+        private final java.util.Set<Long> plots = new java.util.HashSet<>();
+        private int rowCount;
         private double nearestKm = Double.MAX_VALUE;
         private String nearestPlotName;
         private double weight;
@@ -319,8 +332,12 @@ public class NeighbourhoodEngine {
             this.cropName = cropName;
         }
 
-        void record(String plotName, double distanceKm, Instant diagnosedAt, double candidateWeight) {
-            plotCount++;
+        void record(Long plotId, String plotName, double distanceKm, Instant diagnosedAt,
+                    double candidateWeight) {
+            rowCount++;
+            if (plotId != null) {
+                plots.add(plotId);
+            }
             if (distanceKm < nearestKm) {
                 nearestKm = distanceKm;
                 nearestPlotName = plotName;
@@ -338,8 +355,10 @@ public class NeighbourhoodEngine {
             return cropName;
         }
 
+        /** Repli sur le nombre de lignes si aucun identifiant n'a été rendu :
+         *  mieux vaut un décompte imparfait qu'un « sur 0 parcelles ». */
         int plotCount() {
-            return plotCount;
+            return plots.isEmpty() ? rowCount : plots.size();
         }
 
         double nearestKm() {
@@ -361,6 +380,12 @@ public class NeighbourhoodEngine {
 
     private String asString(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    /** Le pilote peut rendre {@code Long}, {@code BigInteger} ou {@code Integer}
+     *  pour un {@code bigint} : on prend la famille, pas le type supposé. */
+    private Long asLong(Object value) {
+        return value instanceof Number number ? number.longValue() : null;
     }
 
     private double asDouble(Object value, double fallback) {
