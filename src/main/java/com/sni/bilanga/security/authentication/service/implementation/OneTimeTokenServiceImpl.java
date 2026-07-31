@@ -1,6 +1,7 @@
 package com.sni.bilanga.security.authentication.service.implementation;
 
 
+import com.sni.bilanga.mailService.interfaces.OttMailService;
 import com.sni.bilanga.config.properties.AppProperties;
 import com.sni.bilanga.generator.verification.GeneratorOfVerificationCode;
 import com.sni.bilanga.security.admin.user.model.Users;
@@ -22,7 +23,7 @@ import java.util.Map;
 public class OneTimeTokenServiceImpl implements OneTimeTokenService {
 
     private final OneTimeTokenRepository ottRepo;
-   // private final OttMailService mailService;
+    private final OttMailService mailService;
     private final JWTService jwtService;
     private final AppProperties.Security securityConfig;
 
@@ -47,7 +48,11 @@ public class OneTimeTokenServiceImpl implements OneTimeTokenService {
                 .expiredAt(Instant.now().plusMillis(ottExpirationMs()))
                 .build();
         ottRepo.save(ott);
-       // mailService.sendOneTimeTokenMail(user, token);
+
+        // Envoi asynchrone : la demande de code ne doit pas attendre Microsoft.
+        // Un utilisateur qui patiente trois secondes recommence, et declenche un
+        // second envoi — donc un second code, qui invalide le premier.
+        mailService.sendOneTimeTokenMail(user, token);
 
         return jwtService.generateVerificationToken(user, "VerificationSession");
     }

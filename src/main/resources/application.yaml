@@ -412,18 +412,24 @@ bilanga:
       # désigne l'envoi alors que la cause est dans le portail.
       # ------------------------------------------------------------
       graph:
-        client-id: ${MICROSOFT_GRAPH_CLIENT_ID:}
-        tenant-id: ${MICROSOFT_GRAPH_TENANT_ID:}
-        sender-email: ${MICROSOFT_SENDER_EMAIL:}
+        client-id: ${MICROSOFT_GRAPH_CLIENT_ID:80eab8f6-815f-4e41-bcc5-1a08e6191949}
+        tenant-id: ${MICROSOFT_GRAPH_TENANT_ID:e1006690-4205-4c71-9f74-1b9fdcbdcaf2}
+        sender-email: ${MICROSOFT_SENDER_EMAIL:no-reply@elleaose.com}
 
-        # ⚠️⚠️ AUCUNE VALEUR PAR DÉFAUT, ET C'EST DÉLIBÉRÉ.
+        # ⚠️ LE SECRET NE PEUT PAS ÊTRE ÉCRIT ICI — ce n'est pas un choix.
         #
-        # Contrairement au secret JWT de démonstration, celui-ci n'est pas
-        # cantonné à une instance d'essai : il autorise l'envoi de courrier au
-        # nom d'un domaine RÉEL, sur un locataire RÉEL. Publié dans un dépôt, il
-        # vaut jusqu'à sa révocation — et rien ne signale son usage par un tiers.
+        # Il y avait été mis, et GITHUB A REFUSÉ LE PUSH : sa protection contre
+        # les secrets reconnaît la forme d'un secret d'application Azure et
+        # bloque la poussée côté serveur. Aucun réglage local ne contourne cela.
         #
+        # La raison du blocage est la bonne : contrairement au secret JWT de
+        # démonstration, celui-ci autorise l'envoi de courrier AU NOM D'UN
+        # DOMAINE RÉEL. Quiconque lirait ce fichier pourrait écrire à n'importe
+        # qui en se présentant comme l'expéditeur configuré.
+        #
+        # Il se pose donc par l'environnement, ce qui prend une commande :
         #   heroku config:set MICROSOFT_GRAPH_CLIENT_SECRET="…"
+        #   $env:MICROSOFT_GRAPH_CLIENT_SECRET="…"     (PowerShell, en local)
         client-secret: ${MICROSOFT_GRAPH_CLIENT_SECRET:}
 
         connect-timeout-seconds: 5

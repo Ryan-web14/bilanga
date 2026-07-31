@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<!--
+  Code de connexion à usage unique.
+
+  ⚠️ MISE EN FORME EN LIGNE, ET C'EST OBLIGATOIRE. La plupart des clients de
+  messagerie retirent les balises <style> ou ignorent les feuilles externes ;
+  un courriel mis en forme « proprement » arrive alors sans aucun style. Le code
+  doit rester lisible dans tous les cas — c'est la seule information qui compte.
+
+  Tableau et non flexbox : Outlook rend le HTML avec le moteur de Word, qui ne
+  connaît ni flex ni grid.
+-->
+<html xmlns:th="http://www.thymeleaf.org" lang="fr">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Votre code de connexion</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f6f5; font-family:Arial, Helvetica, sans-serif;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f5; padding:24px 12px;">
+    <tr>
+        <td align="center">
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                   style="max-width:520px; background-color:#ffffff; border-radius:8px; overflow:hidden;">
+
+                <tr>
+                    <td style="background-color:#2e7d32; padding:20px 28px;">
+                        <span style="color:#ffffff; font-size:20px; font-weight:bold; letter-spacing:1px;">BILANGA</span>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:28px;">
+
+                        <p style="margin:0 0 16px; font-size:16px; color:#1b1b1b;">
+                            Bonjour <span th:text="${firstname}">—</span>,
+                        </p>
+
+                        <p style="margin:0 0 24px; font-size:15px; color:#444444; line-height:1.5;">
+                            Voici votre code de connexion à usage unique.
+                        </p>
+
+                        <!--
+                          Le code est répété en chiffres espacés PUIS en un bloc.
+                          Les chiffres espacés se lisent et se recopient à la main sans
+                          confusion ; le bloc se sélectionne et se copie d'un geste. Les
+                          deux usages existent, et n'ont pas la même contrainte.
+                        -->
+                        <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 20px;">
+                            <tr>
+                                <td th:each="digit : ${tokenDigits}"
+                                    th:text="${digit}"
+                                    style="background-color:#f1f8f2; border:1px solid #cfe3d2; border-radius:6px;
+                                           width:44px; height:52px; text-align:center; vertical-align:middle;
+                                           font-size:26px; font-weight:bold; color:#2e7d32; letter-spacing:2px;">0</td>
+                            </tr>
+                        </table>
+
+                        <p style="margin:0 0 24px; text-align:center; font-size:15px; color:#666666;">
+                            <span style="font-family:'Courier New', monospace; font-size:19px; letter-spacing:5px; color:#1b1b1b;"
+                                  th:text="${token}">000000</span>
+                        </p>
+
+                        <p style="margin:0 0 8px; font-size:14px; color:#666666; line-height:1.5;">
+                            Ce code est <strong>à usage unique</strong> et expire rapidement.
+                        </p>
+
+                        <p style="margin:0; font-size:14px; color:#666666; line-height:1.5;">
+                            Si vous n'êtes pas à l'origine de cette demande, ignorez ce message :
+                            aucune connexion n'aura lieu sans ce code.
+                        </p>
+
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="background-color:#fafafa; padding:16px 28px; border-top:1px solid #eeeeee;">
+                        <p style="margin:0; font-size:12px; color:#999999; line-height:1.5;">
+                            Message automatique — merci de ne pas y répondre.<br/>
+                            Bilanga · plateforme d'agriculture intelligente
+                        </p>
+                    </td>
+                </tr>
+
+            </table>
+
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

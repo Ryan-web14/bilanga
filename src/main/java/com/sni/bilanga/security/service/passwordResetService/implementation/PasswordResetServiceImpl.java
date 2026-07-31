@@ -33,6 +33,7 @@ public class PasswordResetServiceImpl implements PasswordResetService {
     private final UserService userService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetNotifier notifier;
+    private final com.sni.bilanga.mailService.interfaces.PasswordResetMailService passwordResetMailService;
     private final PasswordPolicyValidator passwordPolicyValidator;
     private final AppProperties.Security securityConfig;
 
@@ -66,6 +67,14 @@ public class PasswordResetServiceImpl implements PasswordResetService {
                 .build();
 
         passwordResetTokenRepo.save(resetToken);
+
+        // Le jeton BRUT ne voyage que par ce courriel : seule son empreinte est
+        // persistée. Si l'envoi échoue, personne ne peut plus le retrouver — d'où le
+        // journal de remise, qui rend l'échec visible et l'envoi rejouable.
+        //
+        // Asynchrone : la réponse ne doit pas attendre Microsoft. Un utilisateur qui
+        // patiente recommence, et chaque demande invalide le jeton précédent.
+        passwordResetMailService.sendPasswordResetMail(user, rawToken, resetExpirationMs());
     }
 
     @Override
