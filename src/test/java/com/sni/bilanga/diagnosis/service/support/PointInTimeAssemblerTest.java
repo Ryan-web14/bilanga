@@ -7,6 +7,7 @@ import com.sni.bilanga.farm.model.Plot;
 import com.sni.bilanga.iot.model.SensorReading;
 import com.sni.bilanga.knowledge.dto.response.RecommendationItem;
 import com.sni.bilanga.knowledge.service.interfaces.KnowledgeService;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -40,7 +41,8 @@ class PointInTimeAssemblerTest {
     @BeforeEach
     void setUp() {
         knowledgeService = Mockito.mock(KnowledgeService.class);
-        ConfidenceEvaluator confidence = new ConfidenceEvaluator(knowledgeService, properties());
+        ConfidenceEvaluator confidence = new ConfidenceEvaluator(knowledgeService,
+                Mockito.mock(DiseaseLabeller.class), properties());
         DiagnosisReplayer replayer = new DiagnosisReplayer(knowledgeService, confidence);
         assembler = new PointInTimeAssembler(replayer, confidence);
 

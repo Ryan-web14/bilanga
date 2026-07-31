@@ -39,6 +39,9 @@ public class DiagnosisExplanation {
     private String sourceLabel;
 
     private String result;
+
+    /** Nom français du résultat — voir {@code DiseaseLabeller}. */
+    private String resultLabel;
     private Double confidenceScore;
     private String confidenceLevel;
 

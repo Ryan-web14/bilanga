@@ -16,6 +16,7 @@ import com.sni.bilanga.iot.service.interfaces.IotDeviceService;
 import com.sni.bilanga.iot.service.interfaces.SensorReadingService;
 import com.sni.bilanga.iot.service.support.IotMapper;
 import com.sni.bilanga.iot.service.support.PlausibilityChecker;
+import com.sni.bilanga.utils.format.SqlTemporal;
 import com.sni.bilanga.utils.format.TimeRange;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -173,12 +174,9 @@ public class SensorReadingServiceImpl implements SensorReadingService {
         return measures;
     }
 
+    /** Voir {@link SqlTemporal} : la forme rendue dépend du pilote, pas de l'entité. */
     private Instant toInstant(Object value) {
-        return switch (value) {
-            case Instant instant -> instant;
-            case java.sql.Timestamp timestamp -> timestamp.toInstant();
-            case null, default -> null;
-        };
+        return SqlTemporal.toInstant(value);
     }
 
     private int intValue(Object value) {

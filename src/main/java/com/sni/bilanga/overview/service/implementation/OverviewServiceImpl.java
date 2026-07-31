@@ -372,12 +372,11 @@ public class OverviewServiceImpl implements OverviewService {
         return count > 1 ? "s" : "";
     }
 
+    /** Voir {@link com.sni.bilanga.utils.format.SqlTemporal} : la forme rendue par une
+     *  requête native dépend du pilote, et une forme non reconnue donnait un {@code null}
+     *  silencieux, donc une date affichée au 1ᵉʳ janvier 1970 côté client. */
     private Instant toInstant(Object value) {
-        return switch (value) {
-            case Instant instant -> instant;
-            case java.sql.Timestamp timestamp -> timestamp.toInstant();
-            case null, default -> null;
-        };
+        return com.sni.bilanga.utils.format.SqlTemporal.toInstant(value);
     }
 
     // ============================================================

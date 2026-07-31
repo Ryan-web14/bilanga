@@ -20,6 +20,10 @@ public class DiagnosisResult {
     private Long diagnosticId;
     private String source;
     private String result;
+
+    /** Nom français du résultat. Le modèle rend une classe anglaise ; tout le
+     *  reste du diagnostic, conseils compris, est en français. */
+    private String resultLabel;
     private Double confidenceScore;
     private String cropName;
     private String confidenceLevel;

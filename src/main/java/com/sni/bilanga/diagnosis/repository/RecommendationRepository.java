@@ -63,7 +63,22 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
      * et un rendement, il n'a que faire du détail des conseils. Rapatrier des
      * centaines de lignes pour en compter deux serait absurde.
      *
-     * <p>Colonnes : total, nombre d'appliqués.
+     * <p>Colonnes : total, nombre d'appliqués. Une seule ligne, toujours : un
+     * agrégat sans {@code group by} en produit une même sur un ensemble vide.
+     *
+     * <h3>⚠️ Pourquoi {@code List<Object[]>} et non {@code Object[]}</h3>
+     *
+     * <p>La signature naturelle serait {@code Object[]}, puisqu'on attend une ligne
+     * unique. Elle est piégeuse : Spring Data voit un <strong>tableau</strong>, en
+     * déduit un retour de collection, et rend donc un {@code Object[]} dont chaque
+     * élément est lui-même la ligne. L'appelant qui lit {@code résultat[1]} pour
+     * obtenir la deuxième colonne lit en réalité la <em>deuxième ligne</em>, et lève
+     * un {@code ArrayIndexOutOfBoundsException} sur un résultat d'une seule ligne.
+     *
+     * <p>C'est-à-dire : systématiquement, et pour toute parcelle. La route
+     * {@code /plots/{id}/economics} a répondu 500 en production tant que cette
+     * signature a tenu. Les tests unitaires ne pouvaient rien y voir, la couche
+     * fautive étant celle que le bouchon remplace.
      */
     @Query("""
            select count(r),
@@ -73,7 +88,7 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
              and r.createdAt >= :from
              and r.createdAt <= :to
            """)
-    Object[] uptakeSummary(@Param("plotId") Long plotId,
-                           @Param("from") Instant from,
-                           @Param("to") Instant to);
+    List<Object[]> uptakeSummary(@Param("plotId") Long plotId,
+                                 @Param("from") Instant from,
+                                 @Param("to") Instant to);
 }

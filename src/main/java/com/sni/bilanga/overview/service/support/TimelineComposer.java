@@ -9,6 +9,7 @@ import com.sni.bilanga.enums.AlertStatus;
 import com.sni.bilanga.enums.Culture;
 import com.sni.bilanga.enums.InterventionType;
 import com.sni.bilanga.enums.TimelineEventType;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import com.sni.bilanga.harvest.model.Harvest;
 import com.sni.bilanga.harvest.repository.HarvestRepository;
 import com.sni.bilanga.intervention.model.Intervention;
@@ -83,6 +84,7 @@ public class TimelineComposer {
     private final InterventionRepository interventionRepository;
     private final HarvestRepository harvestRepository;
     private final GrowthStageResolver growthStageResolver;
+    private final DiseaseLabeller diseaseLabeller;
 
     /**
      * Résultat d'une composition.
@@ -220,7 +222,7 @@ public class TimelineComposer {
                     .typeLabel(TimelineEventType.DIAGNOSTIC.getLabel())
                     .title(String.format(FR, "Diagnostic %s : %s",
                             d.getSource() == null ? "" : d.getSource().toLowerCase(FR),
-                            d.getResult()))
+                            labelOf(d)))
                     .detail(confidenceDetail(d))
                     // Un diagnostic normal est une bonne nouvelle : le présenter
                     // au même rang qu'une détection de maladie ferait perdre le
@@ -231,6 +233,16 @@ public class TimelineComposer {
                     .build());
         }
         return diagnostics.size();
+    }
+
+    /**
+     * Le nom français du constat, ou son code si la base de connaissance ne le
+     * nomme pas. Un titre de chronologie est lu par l'exploitant : « Late_blight »
+     * y était le seul fragment d'anglais d'un écran entièrement francophone.
+     */
+    private String labelOf(Diagnostic d) {
+        String label = diseaseLabeller.labelFor(d.getCropName(), d.getResult());
+        return label == null ? d.getResult() : label;
     }
 
     private String confidenceDetail(Diagnostic d) {

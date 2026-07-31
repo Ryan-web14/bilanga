@@ -368,20 +368,15 @@ public class NeighbourhoodEngine {
     }
 
     /**
-     * Une requête native rend {@code Timestamp} ou {@code Instant} selon le pilote
-     * et la version : les deux formes sont acceptées plutôt que d'en supposer une.
+     * Une requête native rend la forme temporelle que choisit le pilote, et pas
+     * celle qu'on suppose. La conversion est centralisée dans
+     * {@link com.sni.bilanga.utils.format.SqlTemporal} : ce code n'en couvrait qu'une
+     * partie, dont pas {@code LocalDateTime}, la forme que PostgreSQL rend en
+     * pratique. Ici l'effet aurait été une fraîcheur de diagnostic voisin toujours
+     * nulle, donc une pondération faussée sans que rien ne le signale.
      */
     private Instant asInstant(Object value) {
-        if (value instanceof Instant instant) {
-            return instant;
-        }
-        if (value instanceof java.sql.Timestamp timestamp) {
-            return timestamp.toInstant();
-        }
-        if (value instanceof java.time.OffsetDateTime offset) {
-            return offset.toInstant();
-        }
-        return null;
+        return com.sni.bilanga.utils.format.SqlTemporal.toInstant(value);
     }
 
     private double round(double value) {

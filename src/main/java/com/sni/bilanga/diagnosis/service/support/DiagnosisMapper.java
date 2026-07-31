@@ -9,6 +9,7 @@ import com.sni.bilanga.enums.RecommendationPriority;
 import com.sni.bilanga.enums.RecommendationStatus;
 import com.sni.bilanga.enums.RecommendationType;
 import com.sni.bilanga.enums.Culture;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,7 @@ import java.util.List;
 public class DiagnosisMapper {
 
     private final ConfidenceEvaluator confidenceEvaluator;
+    private final DiseaseLabeller diseaseLabeller;
 
     public DiagnosticHistoryResponse toHistory(Diagnostic d, List<Recommendation> recommendations) {
         return DiagnosticHistoryResponse.builder()
@@ -27,6 +29,7 @@ public class DiagnosisMapper {
                 .plotName(d.getPlot().getName())
                 .source(d.getSource())
                 .result(d.getResult())
+                .resultLabel(diseaseLabeller.labelFor(d.getCropName(), d.getResult()))
                 .confidenceScore(d.getConfidenceScore())
                 .confidenceLevel(confidenceEvaluator.level(d.getConfidenceScore()))
                 .cropName(Culture.canonical(d.getCropName()))

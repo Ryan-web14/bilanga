@@ -1,5 +1,6 @@
 package com.sni.bilanga.diagnosis.service.support;
 
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import com.sni.bilanga.diagnosis.dto.response.AlternativeComparison;
 import com.sni.bilanga.diagnosis.dto.response.DiagnosisExplanation;
 import com.sni.bilanga.diagnosis.model.Diagnostic;
@@ -46,6 +47,7 @@ public class DiagnosisExplainer {
             Map.entry("npk", "l'équilibre NPK"));
 
     private final ConfidenceEvaluator confidenceEvaluator;
+    private final DiseaseLabeller diseaseLabeller;
     private final ComparativeExplainer comparativeExplainer;
 
     public DiagnosisExplanation explain(Diagnostic d, List<Recommendation> recommendations) {
@@ -60,6 +62,7 @@ public class DiagnosisExplainer {
                 .source(d.getSource())
                 .sourceLabel(source == null ? null : source.getLabel())
                 .result(d.getResult())
+                .resultLabel(diseaseLabeller.labelFor(d.getCropName(), d.getResult()))
                 .confidenceScore(d.getConfidenceScore())
                 .confidenceLevel(confidenceEvaluator.level(d.getConfidenceScore()))
                 .reliable(confidenceEvaluator.isReliable(d.getConfidenceScore()))

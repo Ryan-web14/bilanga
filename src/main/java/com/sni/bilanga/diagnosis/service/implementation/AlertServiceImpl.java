@@ -5,6 +5,7 @@ import com.sni.bilanga.config.properties.BilangaProperties;
 import com.sni.bilanga.diagnosis.dto.response.AlertResponse;
 import com.sni.bilanga.diagnosis.model.Alert;
 import com.sni.bilanga.diagnosis.model.Diagnostic;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import com.sni.bilanga.diagnosis.repository.AlertRepository;
 import com.sni.bilanga.diagnosis.service.interfaces.AlertService;
 import com.sni.bilanga.enums.AlertCategory;
@@ -58,6 +59,7 @@ public class AlertServiceImpl implements AlertService {
             "status", SemanticSort.rankExpression("a.status", "NOUVELLE", "ACQUITTEE", "RESOLUE"));
 
     private final AlertRepository alertRepository;
+    private final DiseaseLabeller diseaseLabeller;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final BilangaProperties.Alert alertConfig;
@@ -277,12 +279,21 @@ public class AlertServiceImpl implements AlertService {
         return d.getSource() + ":" + d.getCropName() + ":" + d.getResult();
     }
 
+    /**
+     * Le message est traduit, la signature ne l'est jamais.
+     *
+     * <p>{@link #signatureOf} continue de porter le code brut : c'est une empreinte de
+     * déduplication, et la faire dépendre d'un libellé la ferait changer au premier
+     * ajustement de la base de connaissance. Toutes les alertes ouvertes cesseraient
+     * alors de se reconnaître, et chaque relevé en lèverait une nouvelle.
+     */
     private String messageFor(Diagnostic d, long urgent) {
         String origin = "IMAGE".equals(d.getSource()) ? "l'analyse d'image" : "les capteurs";
+        String constat = diseaseLabeller.labelFor(d.getCropName(), d.getResult());
         return String.format(
                 "%s sur la parcelle %s : %s détecté par %s. %d action%s à mener sans délai.",
                 urgent >= CRITICAL_URGENT_COUNT ? "Situation critique" : "Intervention requise",
-                d.getPlot().getName(), d.getResult(), origin,
+                d.getPlot().getName(), constat == null ? d.getResult() : constat, origin,
                 urgent, urgent > 1 ? "s" : "");
     }
 

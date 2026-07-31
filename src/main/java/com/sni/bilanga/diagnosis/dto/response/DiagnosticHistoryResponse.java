@@ -20,6 +20,9 @@ public class DiagnosticHistoryResponse {
     private String plotName;
     private String source;
     private String result;
+
+    /** Nom français du résultat — voir {@code DiseaseLabeller}. */
+    private String resultLabel;
     private Double confidenceScore;
     private String confidenceLevel;
     private String cropName;

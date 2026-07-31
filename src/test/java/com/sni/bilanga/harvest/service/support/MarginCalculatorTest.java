@@ -314,6 +314,32 @@ class MarginCalculatorTest {
             assertThat(economics.getAppliedRecommendationCount()).isZero();
             assertThat(economics.getUptakeRate()).isNull();
         }
+
+        /**
+         * Le défaut qui a fait répondre 500 à {@code /plots/{id}/economics} en
+         * production, pour toute parcelle et quelle que soit la donnée.
+         *
+         * <p>Le dépôt déclarait {@code Object[]}. Spring Data y a vu un retour de
+         * collection et a rendu un tableau de <em>lignes</em> : lire l'indice 1 pour
+         * obtenir la deuxième colonne revenait à lire la deuxième ligne, qui n'existe
+         * jamais. Un agrégat sans {@code group by} rend exactement une ligne.
+         *
+         * <p>Ce test ne reproduit pas le mauvais typage, qu'un bouchon ne peut pas
+         * exprimer. Il verrouille ce qui reste atteignable : une ligne plus courte
+         * qu'attendu ne doit pas coûter le bilan entier. La signature du dépôt, elle,
+         * porte désormais l'avertissement.
+         */
+        @Test
+        @DisplayName("une ligne d'uptake tronquée ne fait pas perdre le bilan")
+        void truncatedUptakeRowIsTolerated() {
+            uptake(new Object[]{12});
+
+            PlotEconomics economics = calculator.compute(plot(), crop(1d), FROM, TO);
+
+            assertThat(economics.getRecommendationCount()).isEqualTo(12);
+            assertThat(economics.getAppliedRecommendationCount()).isZero();
+            assertThat(economics.getMargin()).isNotNull();
+        }
     }
 
     // ============================================================
@@ -418,10 +444,20 @@ class MarginCalculatorTest {
                 .thenReturn(rows);
     }
 
+    /**
+     * Le bouchon rend une <strong>liste de lignes</strong>, comme le vrai dépôt.
+     *
+     * <p>C'est le point qu'un bouchon trop obligeant masquait : la signature était
+     * {@code Object[]}, le bouchon rendait la ligne attendue, et la production
+     * recevait un tableau de lignes. Le test passait, la route répondait 500.
+     */
     private void uptake(Object[] row) {
+        // List.<Object[]>of(row) et non List.of(row) : sur un Object[], le varargs
+        // s'étale et donnerait une liste de colonnes au lieu d'une liste d'une ligne.
+        List<Object[]> rows = row == null ? List.of() : List.<Object[]>of(row);
         Mockito.when(recommendationRepository.uptakeSummary(
                         anyLong(), any(Instant.class), any(Instant.class)))
-                .thenReturn(row);
+                .thenReturn(rows);
     }
 
     private static Plot plot() {

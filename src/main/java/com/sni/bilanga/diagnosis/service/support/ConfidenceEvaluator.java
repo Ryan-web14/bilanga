@@ -4,6 +4,7 @@ package com.sni.bilanga.diagnosis.service.support;
 import com.sni.bilanga.config.properties.BilangaProperties;
 import com.sni.bilanga.diagnosis.dto.response.ClassProbability;
 import com.sni.bilanga.knowledge.service.interfaces.KnowledgeService;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,7 @@ public class ConfidenceEvaluator {
     public static final String FAIBLE = "FAIBLE";
 
     private final KnowledgeService knowledgeService;
+    private final DiseaseLabeller diseaseLabeller;
 
     /** Seuils de fiabilité. Nommé distinctement du paramètre « confidence ». */
     private final BilangaProperties.Confidence thresholds;
@@ -37,16 +39,25 @@ public class ConfidenceEvaluator {
     }
 
     /** Les n classes les plus probables, codes normalisés, ordre décroissant. */
-    public List<ClassProbability> topClasses(Map<String, Double> probabilities, int n) {
+    /**
+     * @param cropName culture du diagnostic, nécessaire au nom français : le même code
+     *                 {@code healthy} se dit « Tomate saine » ou « Manioc sain »
+     */
+    public List<ClassProbability> topClasses(Map<String, Double> probabilities, int n,
+                                             String cropName) {
         if (probabilities == null || probabilities.isEmpty()) return List.of();
 
         return probabilities.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .limit(n)
-                .map(e -> ClassProbability.builder()
-                        .diseaseCode(knowledgeService.normalizeDiseaseCode(e.getKey()))
-                        .probability(e.getValue())
-                        .build())
+                .map(e -> {
+                    String code = knowledgeService.normalizeDiseaseCode(e.getKey());
+                    return ClassProbability.builder()
+                            .diseaseCode(code)
+                            .displayName(diseaseLabeller.labelFor(cropName, code))
+                            .probability(e.getValue())
+                            .build();
+                })
                 .toList();
     }
 

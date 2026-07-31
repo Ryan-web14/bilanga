@@ -92,9 +92,14 @@ public class MarginCalculator {
                         + "et la comparaison avec une autre parcelle est donc impossible.");
         }
 
-        Object[] uptake = recommendationRepository.uptakeSummary(plot.getId(), fromInstant, toInstant);
-        int total = uptake == null ? 0 : intOf(uptake[0]);
-        int applied = uptake == null ? 0 : intOf(uptake[1]);
+        // Une ligne, toujours : un agrégat sans `group by` en rend une même sur un
+        // ensemble vide. On la lit défensivement quand même, car un résultat vide
+        // coûterait ici le bilan entier.
+        List<Object[]> uptakeRows =
+                recommendationRepository.uptakeSummary(plot.getId(), fromInstant, toInstant);
+        Object[] uptake = uptakeRows == null || uptakeRows.isEmpty() ? null : uptakeRows.getFirst();
+        int total = uptake == null || uptake.length < 1 ? 0 : intOf(uptake[0]);
+        int applied = uptake == null || uptake.length < 2 ? 0 : intOf(uptake[1]);
 
         if (harvests.isEmpty()) {
             missing.add("Aucune récolte enregistrée sur la période : le produit brut est nul "

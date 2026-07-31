@@ -1,6 +1,7 @@
 package com.sni.bilanga.diagnosis.service.implementation;
 
 
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import com.sni.bilanga.diagnosis.dto.response.DiagnosisReplay;
 import com.sni.bilanga.diagnosis.dto.response.PointInTimeView;
 import com.sni.bilanga.diagnosis.service.support.PointInTimeAssembler;
@@ -81,6 +82,7 @@ public class DiagnosisServiceImpl implements DiagnosisService {
     private final PlotService plotService;
     private final CropService cropService;
     private final AlertService alertService;
+    private final DiseaseLabeller diseaseLabeller;
 
     // ============================================================
     // Chaîne image
@@ -95,7 +97,8 @@ public class DiagnosisServiceImpl implements DiagnosisService {
         String code = knowledgeService.normalizeDiseaseCode(pred.getDiseaseClass());
 
         List<ClassProbability> alternatives =
-                confidenceEvaluator.topClasses(pred.getAllProbabilities(), MAX_ALTERNATIVES);
+                confidenceEvaluator.topClasses(
+                        pred.getAllProbabilities(), MAX_ALTERNATIVES, ctx.getCropName());
 
         Diagnostic diagnostic = persistDiagnostic(ctx, "IMAGE", code,
                 pred.getConfidence(), visionModel(ctx.getCropName()), null);
@@ -545,6 +548,7 @@ public class DiagnosisServiceImpl implements DiagnosisService {
                 .diagnosticId(diagnostic.getId())
                 .source(diagnostic.getSource())
                 .result(diagnostic.getResult())
+                .resultLabel(diseaseLabeller.labelFor(diagnostic.getCropName(), diagnostic.getResult()))
                 .confidenceScore(diagnostic.getConfidenceScore())
                 .cropName(Culture.canonical(diagnostic.getCropName()))
                 .confidenceLevel(confidenceEvaluator.level(diagnostic.getConfidenceScore()))

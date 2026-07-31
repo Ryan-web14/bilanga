@@ -8,6 +8,7 @@ import com.sni.bilanga.farm.model.Plot;
 import com.sni.bilanga.iot.model.SensorReading;
 import com.sni.bilanga.knowledge.dto.response.RecommendationItem;
 import com.sni.bilanga.knowledge.service.interfaces.KnowledgeService;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,7 +43,8 @@ class DiagnosisReplayerTest {
     void setUp() {
         knowledgeService = Mockito.mock(KnowledgeService.class);
         replayer = new DiagnosisReplayer(knowledgeService,
-                new ConfidenceEvaluator(knowledgeService, new BilangaProperties.Confidence()));
+                new ConfidenceEvaluator(knowledgeService,
+                        Mockito.mock(DiseaseLabeller.class), new BilangaProperties.Confidence()));
 
         Mockito.when(knowledgeService.assessRisks(anyString(), any())).thenReturn(List.of());
         Mockito.when(knowledgeService.assessTrends(anyString(), any(), any())).thenReturn(List.of());
