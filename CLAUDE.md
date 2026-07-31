@@ -218,6 +218,11 @@ ne doit pas manger le préfixe.
   ne se recouvrent pas ; celle-ci est la plus récente.
 - **@docs/RBAC_FRONTEND.md** — rôles, permissions, matrice route→permission, écrans
   d'administration. Vocabulaire semé par la V24.
+- **@docs/SOUTENANCE_DEMONSTRATION.md** — les trois démonstrations de bout en bout jouées
+  devant le jury : appels exacts, réponses attendues, plan de repli. Ancré sur les
+  identifiants réels de la production peuplée par `scripts/seed-demo.py`.
+- **@docs/SOUTENANCE_QUESTIONS.md** — les questions du jury et leurs réponses, dont une
+  section entière sur les cas alternatifs et dégradés, et une sur les limites à assumer.
 - **@docs/BILAN_ET_PERSPECTIVES.md** — bilan, audit priorisé (A1→A18) et fonctionnalités
   à venir par rapport valeur/effort.
 - **@docs/PLAN_DE_CORRECTION.md** — **le plan d'exécution** : 8 lots ordonnés par dépendance,
