@@ -281,26 +281,41 @@ def _instant(offset_days, hour=9):
 
 
 def seed_past_campaigns(plots):
-    """Campagne close + son bilan figé. À faire AVANT la campagne en cours :
-    le gel du bilan porte sur la fenêtre plantation → aujourd'hui, et compterait
-    sinon les charges de la campagne suivante."""
+    """Campagne close + son bilan figé. À faire AVANT la campagne en cours : le gel
+    du bilan porte sur la fenêtre plantation → aujourd'hui, et compterait sinon les
+    charges de la campagne suivante.
+
+    Une seule culture peut être EN_COURS par parcelle. Si la clôture a échoué lors
+    d'une exécution précédente, la campagne passée est restée active et l'étape
+    suivante l'a recyclée en campagne courante. On la reprend donc telle quelle
+    plutôt que d'en créer une seconde, que la règle refuserait.
+
+    ⚠️ Cette reprise suppose que le script est seul maître des quatre parcelles
+    qu'il nomme. Ne le lancez pas sur une base portant de vraies campagnes."""
     print("\n▸ Campagnes closes (pour /succession et /compare-previous)")
     for spec in CROPS_PAST:
         plot = plots.get(spec["plot"])
         if not plot:
             continue
-        already = [c for c in page(f"/crops?plotId={plot['id']}&size=50")
-                   if c.get("plantingDate") == _iso_date(spec["planted"])]
-        if already:
+
+        existing = page(f"/crops?plotId={plot['id']}&size=50")
+        done = [c for c in existing
+                if c.get("status") == "TERMINEE" and c.get("closureReason")]
+        if done:
             print(f"  · {plot['name']} — campagne {spec['variety']} déjà close")
             continue
 
-        crop = call("POST", "/crops", {
+        body = {
             "plotId": plot["id"], "cropName": spec["cropName"], "variety": spec["variety"],
             "plantingDate": _iso_date(spec["planted"]), "cycleDurationDays": spec["cycle"],
             "plantedArea": spec["area"], "plantDensity": spec["density"],
             "seedLot": spec["lot"], "status": "EN_COURS",
-        })
+        }
+        active = [c for c in existing if c.get("status") == "EN_COURS"]
+        if active:
+            crop = call("PUT", f"/crops/{active[0]['id']}", body)
+        else:
+            crop = call("POST", "/crops", body)
         if not crop:
             continue
 
@@ -323,8 +338,12 @@ def seed_past_campaigns(plots):
             "reason": spec["reason"], "actualEndDate": _iso_date(spec["closed"]),
             "note": spec["note"],
         })
-        print(f"  ✓ {plot['name']} — {spec['variety']} close ({spec['reason']})"
-              f"{' · bilan figé' if closed else ''}")
+        if closed:
+            print(f"  ✓ {plot['name']} — {spec['variety']} close "
+                  f"({spec['reason']}) · bilan figé")
+        else:
+            print(f"  ✗ {plot['name']} — clôture refusée. La campagne reste EN_COURS "
+                  f"et sera recyclée en campagne courante ; relancez après correction.")
 
 
 def seed_current_crops(plots):
@@ -474,7 +493,11 @@ def shape_nordest(p, hour):
 #    référence à la comparaison entre voisins.
 def shape_nordest_peer(p, hour):
     base = shape_nordest(p, hour)
-    return {k: (jitter(v, 1.4) if isinstance(v, float) and k != "pluviometrie" else v)
+    # Le bruit ne s'applique pas à la pluviométrie, qui est un cumul, ni à la
+    # conductivité : à 1,15 de moyenne, un écart de 1,4 la fait passer sous zéro,
+    # et la contrainte CHECK de la V11 rejette alors la ligne entière.
+    fixed = {"pluviometrie", "conductiviteElectrique"}
+    return {k: (jitter(v, 1.4) if isinstance(v, float) and k not in fixed else v)
             for k, v in base.items()}
 
 
@@ -550,8 +573,36 @@ def send_readings(readings, label, batch=25):
     return diagnosed
 
 
+def wake_inference(attempts=6):
+    """Réveille le microservice d'inférence avant d'envoyer les séries.
+
+    Sur un hébergement à dyno endormi, le premier appel met une trentaine de
+    secondes et échoue. Le relevé, lui, est conservé : c'est l'invariant du
+    projet. Mais tout un lot arrive alors avec `skipReason: ML_INDISPONIBLE`, et
+    la démonstration se retrouve avec des courbes sans conclusions, sans qu'aucune
+    erreur ne le signale.
+
+    On sacrifie donc un relevé de sonde pour s'en assurer, plutôt que soixante-douze."""
+    probe = {"technicalId": "ESP32-PROD-01", "quality": "SIMULEE",
+             "temperature": 28.0, "temperatureSol": 24.0, "humiditeSol": 30.0,
+             "humiditeAir": 75.0, "ph": 6.3, "azote": 40.0, "phosphore": 18.0,
+             "potassium": 30.0, "luminosite": 15000.0, "pluviometrie": 0.0,
+             "conductiviteElectrique": 1.2, "signalStrength": -70}
+    for attempt in range(1, attempts + 1):
+        res = call("POST", "/ingest/readings", probe, device_key=True, quiet=True)
+        if res and res.get("diagnosed"):
+            print(f"  ✓ moteur d'inférence réveillé (tentative {attempt})")
+            return True
+        reason = (res or {}).get("skipReason", "sans réponse")
+        print(f"    … réveil du moteur d'inférence, tentative {attempt} : {reason}")
+    print("  ! le moteur d'inférence ne répond pas : les relevés seront conservés, "
+          "mais sans diagnostic")
+    return False
+
+
 def seed_readings():
     print("\n▸ Séries historiques  (c'est ce qui fabrique diagnostics, conseils et alertes)")
+    wake_inference()
     total = 0
     total += send_readings(build_series("ESP32-PROD-01", 12, 6, shape_nordest),
                            "Nord-Est (principal)")
@@ -565,17 +616,19 @@ def seed_readings():
     #    varie toujours au moins sur sa dernière décimale, six fois de suite n'est
     #    plus un phénomène naturel. La valeur choisie est PLAUSIBLE — c'est
     #    précisément le cas dangereux, et la raison d'être de cette règle.
+    #    ⚠️ Les relevés figés doivent tenir dans la FENÊTRE d'analyse (12 h par
+    #    défaut) : six valeurs identiques étalées sur quatre jours n'en laissent que
+    #    deux dans la fenêtre, et la règle ne se déclenche pas. Une heure d'écart.
     frozen = []
-    for d in range(4, 0, -1):
-        for slot in range(3):
-            when = (NOW - timedelta(days=d)).replace(hour=slot * 8 + 2, minute=15, second=0)
-            frozen.append({"technicalId": "ESP32-E-02", "quality": "SIMULEE",
-                           "recordedAt": when.isoformat().replace("+00:00", "Z"),
-                           "temperature": 25.0, "temperatureSol": 26.0,
-                           "humiditeSol": 41.0, "humiditeAir": 58.0, "ph": 5.4,
-                           "azote": 13.0, "phosphore": 9.0, "potassium": 22.0,
-                           "luminosite": 12000.0, "pluviometrie": 0.0,
-                           "conductiviteElectrique": 0.6, "signalStrength": -88})
+    for h in range(9, 0, -1):
+        when = NOW - timedelta(hours=h)
+        frozen.append({"technicalId": "ESP32-E-02", "quality": "SIMULEE",
+                       "recordedAt": when.isoformat().replace("+00:00", "Z"),
+                       "temperature": 25.0, "temperatureSol": 26.0,
+                       "humiditeSol": 41.0, "humiditeAir": 58.0, "ph": 5.4,
+                       "azote": 13.0, "phosphore": 9.0, "potassium": 22.0,
+                       "luminosite": 12000.0, "pluviometrie": 0.0,
+                       "conductiviteElectrique": 0.6, "signalStrength": -88})
     send_readings(frozen, "Est (sonde figée → DEFAILLANTE)")
     return total
 
@@ -741,6 +794,8 @@ def main():
     ap.add_argument("--host", default="https://bilanga-c65c6649bf37.herokuapp.com")
     ap.add_argument("--skip-readings", action="store_true",
                     help="ne rejoue pas les séries (elles ne sont pas idempotentes)")
+    ap.add_argument("--readings-only", action="store_true",
+                    help="n'envoie que les séries, en supposant le reste déjà en place")
     args = ap.parse_args()
 
     HOST = args.host.rstrip("/")
@@ -748,6 +803,12 @@ def main():
     print(f"Peuplement de {HOST}")
 
     login()
+
+    if args.readings_only:
+        seed_readings()
+        report()
+        return
+
     users = seed_users()
     farm = seed_organization(users)
     plots = seed_plots(users, farm)
