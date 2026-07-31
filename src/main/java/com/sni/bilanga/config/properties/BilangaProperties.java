@@ -667,6 +667,77 @@ public class BilangaProperties {
 
         @Min(1)
         private int readTimeoutSeconds = 10;
+
+        @Valid private final Graph graph = new Graph();
+
+        /**
+         * Envoi par <strong>Microsoft Graph</strong>, en remplacement de SMTP.
+         *
+         * <h2>Pourquoi ce transport existe</h2>
+         *
+         * <p>Le canal courriel parlait SMTP avec {@code AUTH LOGIN} — identifiant et mot
+         * de passe en base64. <strong>Microsoft 365 a désactivé l'authentification basique
+         * SMTP sur la plupart des locataires</strong> : sur un locataire moderne, ce
+         * transport échoue à l'authentification quelles que soient les valeurs fournies,
+         * et aucune configuration ne le rattrape.
+         *
+         * <p>Graph emprunte l'autre chemin : jeton OAuth2 en flux
+         * {@code client_credentials}, puis {@code POST /users/{sender}/sendMail}. C'est la
+         * voie que Microsoft maintient.
+         *
+         * <h2>Ce qu'il faut côté Azure</h2>
+         *
+         * <ol>
+         *   <li>une inscription d'application, d'où viennent {@code clientId} et
+         *       {@code tenantId} ;</li>
+         *   <li>un secret client ;</li>
+         *   <li>la permission <strong>d'application</strong> {@code Mail.Send}
+         *       — pas la permission déléguée — avec <strong>consentement
+         *       administrateur</strong>. Sans ce consentement, le jeton est délivré mais
+         *       l'envoi répond 403, ce qui se diagnostique très mal.</li>
+         * </ol>
+         *
+         * <p>Renseigné, ce transport <strong>prime sur SMTP</strong> : le canal ne peut
+         * pas emprunter les deux, et Graph est le seul qui fonctionne sur un locataire
+         * verrouillé.
+         */
+        @Data
+        public static class Graph {
+
+            /**
+             * Identifiant de l'inscription d'application. <strong>Vide ⇒ transport
+             * inutilisé</strong>, le canal retombe sur SMTP.
+             */
+            private String clientId = "";
+
+            /**
+             * ⚠️ <strong>SECRET — jamais de valeur par défaut dans ce fichier.</strong>
+             *
+             * <p>Contrairement au secret JWT de démonstration, celui-ci n'est pas cantonné
+             * à une instance d'essai : il autorise l'envoi de courrier au nom d'un domaine
+             * réel, sur un locataire réel. Publié dans un dépôt, il vaut jusqu'à sa
+             * révocation — et rien n'en signale l'usage par un tiers.
+             *
+             * <p>Se pose par l'environnement : {@code MICROSOFT_GRAPH_CLIENT_SECRET}.
+             */
+            private String clientSecret = "";
+
+            private String tenantId = "";
+
+            /**
+             * Boîte au nom de laquelle le message part.
+             *
+             * <p>Doit exister dans le locataire : le flux {@code client_credentials}
+             * n'authentifie pas un utilisateur, il agit <em>au nom de</em> celui-ci.
+             */
+            private String senderEmail = "";
+
+            @Min(1)
+            private int connectTimeoutSeconds = 5;
+
+            @Min(1)
+            private int readTimeoutSeconds = 15;
+        }
     }
 
     /**

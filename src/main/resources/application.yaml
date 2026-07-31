@@ -398,6 +398,37 @@ bilanga:
       connect-timeout-seconds: 5
       read-timeout-seconds: 10
 
+      # ------------------------------------------------------------
+      # Microsoft Graph — remplace SMTP quand il est configuré.
+      #
+      # POURQUOI. Le canal SMTP parle AUTH LOGIN, et Microsoft 365 a désactivé
+      # l'authentification basique SMTP sur la plupart des locataires : sur un
+      # locataire moderne, SMTP échoue quelles que soient les valeurs fournies,
+      # et aucune configuration ne le rattrape.
+      #
+      # CÔTÉ AZURE : permission d'APPLICATION Mail.Send — pas la permission
+      # déléguée — avec CONSENTEMENT ADMINISTRATEUR. Sans ce consentement, le
+      # jeton est délivré normalement et l'envoi répond 403 : le symptôme
+      # désigne l'envoi alors que la cause est dans le portail.
+      # ------------------------------------------------------------
+      graph:
+        client-id: ${MICROSOFT_GRAPH_CLIENT_ID:}
+        tenant-id: ${MICROSOFT_GRAPH_TENANT_ID:}
+        sender-email: ${MICROSOFT_SENDER_EMAIL:}
+
+        # ⚠️⚠️ AUCUNE VALEUR PAR DÉFAUT, ET C'EST DÉLIBÉRÉ.
+        #
+        # Contrairement au secret JWT de démonstration, celui-ci n'est pas
+        # cantonné à une instance d'essai : il autorise l'envoi de courrier au
+        # nom d'un domaine RÉEL, sur un locataire RÉEL. Publié dans un dépôt, il
+        # vaut jusqu'à sa révocation — et rien ne signale son usage par un tiers.
+        #
+        #   heroku config:set MICROSOFT_GRAPH_CLIENT_SECRET="…"
+        client-secret: ${MICROSOFT_GRAPH_CLIENT_SECRET:}
+
+        connect-timeout-seconds: 5
+        read-timeout-seconds: 15
+
 # ============================================================
 # Réglages transverses et de sécurité — reflètent AppProperties.
 # Aucune de ces clés n'était déclarée : elles n'étaient donc pas modifiables
