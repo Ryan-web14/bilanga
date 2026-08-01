@@ -471,24 +471,32 @@ curl -s "$API/interventions/$INTERVENTION/effect" -H "$AUTH"
 curl -s "$API/plots/7279573782111453184/economics" -H "$AUTH"
 ```
 
-> Les chiffres ci-dessous illustrent **la forme de la réponse**, pas des valeurs relevées :
-> la route répondait 500 jusqu'au correctif du 2026-08-01, elle n'a donc encore jamais
-> rendu de bilan. Relevez les vraies valeurs une fois le déploiement fait, et corrigez ce
-> bloc : citer un chiffre qu'on n'a pas vu est le meilleur moyen d'être pris en défaut.
+**Valeurs relevées en production le 2026-08-01**, après déploiement du correctif :
 
 ```jsonc
 {
-  "harvestCount": 2, "totalQuantity": 860.0, "grossRevenue": 460000.00,
-  "interventionCount": 3, "totalCost": 71000.00,
-  "costByInterventionType": { "Irrigation": 22000.00, "Fertilisation": 31000.00, "Désherbage": 18000.00 },
-  "margin": 389000.00, "plantedArea": 0.8,
-  "marginPerHectare": 486250.00, "yieldPerHectare": 1075.0,
-  "costRatio": 15.43,
-  "recommendationCount": 412, "appliedRecommendationCount": 2, "uptakeRate": 0.49,
+  "harvestCount": 2, "totalQuantity": 860.0, "quantityUnit": "kg",
+  "grossRevenue": 460800.00, "currency": "XAF",
+  "interventionCount": 2, "totalCost": 53000.00,
+  "costByInterventionType": { "Fertilisation": 31000.00, "Irrigation": 22000.00 },
+  "margin": 407800.00, "plantedArea": 0.8,
+  "marginPerHectare": 509750.00, "yieldPerHectare": 1075.0,
+  "costRatio": 11.5,
+  "recommendationCount": 981, "appliedRecommendationCount": 7, "uptakeRate": 0.71,
   "limitation": "Le taux de suivi des conseils et le rendement sont présentés côte à côte : c'est un constat, pas une démonstration…",
   "missingData": []
 }
 ```
+
+> ⚠️ **Un chiffre à commenter avant que le jury ne le relève :** le taux de suivi est de
+> **0,71 %**, sept conseils appliqués sur neuf cent quatre-vingt-un. C'est l'effet du jeu
+> de démonstration, où douze jours de relevés ont produit des centaines de diagnostics
+> sans que personne ne saisisse les actions correspondantes.
+>
+> **Dites-le vous-même, et servez-vous-en** : « ce chiffre mesure exactement ce qu'il
+> annonce, la part des conseils dont on sait qu'ils ont été suivis. Il est bas parce que
+> la saisie des interventions est le maillon humain de la chaîne, et c'est précisément ce
+> que le système rend visible au lieu de le supposer. »
 
 > **Trois points, dans cet ordre.**
 >

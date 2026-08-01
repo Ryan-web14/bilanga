@@ -178,7 +178,7 @@ public class AgronomicEngine {
         if (severity < agronomic.getMinSeverity()) return;
 
         out.add(build(category, field, observed, min, gap, severity,
-                String.format(FR, "%s : %.1f%s — seuil bas de la culture %s : %.1f%s (déficit de %.1f%s).",
+                String.format(FR, "%s : %.1f%s  seuil bas de la culture %s : %.1f%s (déficit de %.1f%s).",
                         label, observed, unit, crop, min, unit, gap, unit)));
     }
 
