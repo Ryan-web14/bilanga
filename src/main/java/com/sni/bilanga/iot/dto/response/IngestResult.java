@@ -57,6 +57,16 @@ public class IngestResult {
     private String diagnosis;
 
     /**
+     * Nom français du diagnostic.
+     *
+     * <p>{@code diagnosis} porte le code brut, qui est ce dont un boîtier ou un
+     * simulateur a besoin pour comparer sans ambiguïté. Cette réponse est pourtant la
+     * première que lit un humain qui met la chaîne au point, et le code y restait la
+     * seule chaîne anglaise d'une API francophone.
+     */
+    private String diagnosisLabel;
+
+    /**
      * Motif lisible par une machine lorsque le diagnostic n'a pas été conduit :
      * {@code CONDITIONS_STABLES}, {@code ML_INDISPONIBLE}, {@code CONTEXTE_ABSENT},
      * {@code SONDE_DEFAILLANTE}.

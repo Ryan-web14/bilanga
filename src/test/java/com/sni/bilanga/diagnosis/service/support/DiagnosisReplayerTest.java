@@ -36,15 +36,19 @@ class DiagnosisReplayerTest {
 
     private KnowledgeService knowledgeService;
     private DiagnosisReplayer replayer;
+    private DiseaseLabeller labeller;
 
     private static final Instant NOW = Instant.parse("2026-07-12T08:00:00Z");
 
     @BeforeEach
     void setUp() {
         knowledgeService = Mockito.mock(KnowledgeService.class);
+        labeller = Mockito.mock(DiseaseLabeller.class);
+        Mockito.when(labeller.labelFor(any(), any())).thenReturn("Mildiou de la tomate");
         replayer = new DiagnosisReplayer(knowledgeService,
                 new ConfidenceEvaluator(knowledgeService,
-                        Mockito.mock(DiseaseLabeller.class), new BilangaProperties.Confidence()));
+                        Mockito.mock(DiseaseLabeller.class), new BilangaProperties.Confidence()),
+                labeller);
 
         Mockito.when(knowledgeService.assessRisks(anyString(), any())).thenReturn(List.of());
         Mockito.when(knowledgeService.assessTrends(anyString(), any(), any())).thenReturn(List.of());
@@ -238,6 +242,37 @@ class DiagnosisReplayerTest {
     // ============================================================
 
     @Nested
+    @DisplayName("L'instantané porte le nom français à côté du score")
+    class SnapshotLabel {
+
+        /**
+         * L'instantané est le seul objet du diagnostic qui présente le résultat
+         * <strong>à côté de son score de confiance</strong>. Il sert au rejeu et à la
+         * vue à un instant donné, et laissait passer le code brut du modèle là où tout
+         * le reste de l'API est francophone.
+         */
+        @Test
+        @DisplayName("resultLabel est renseigné, et le code brut reste disponible")
+        void snapshotCarriesTheFrenchName() {
+            var snapshot = replayer.snapshotOf("tomate", "Late_blight", 0.97, List.of());
+
+            assertThat(snapshot.getResult())
+                    .as("le code brut reste, un client machine en a besoin pour comparer")
+                    .isEqualTo("Late_blight");
+            assertThat(snapshot.getResultLabel()).isEqualTo("Mildiou de la tomate");
+            assertThat(snapshot.getConfidenceScore()).isEqualTo(0.97);
+        }
+
+        @Test
+        @DisplayName("la culture est transmise au traducteur, elle décide du nom")
+        void cropIsPassedToTheLabeller() {
+            replayer.snapshotOf("manioc", "healthy", 0.8, List.of());
+
+            Mockito.verify(labeller).labelFor("manioc", "healthy");
+        }
+    }
+
+    @Nested
     @DisplayName("diff — quatre natures d'écart")
     class Diff {
 
@@ -245,8 +280,8 @@ class DiagnosisReplayerTest {
         @DisplayName("deux instantanés identiques ne produisent aucun écart")
         void identicalSnapshotsYieldNothing() {
             var lines = List.of(line("AGRONOMIQUE", "humidite_sol", 35.0, "HAUTE"));
-            var before = replayer.snapshotOf("X", 0.9, lines);
-            var after = replayer.snapshotOf("X", 0.9, lines);
+            var before = replayer.snapshotOf("tomate", "X", 0.9, lines);
+            var after = replayer.snapshotOf("tomate", "X", 0.9, lines);
 
             assertThat(replayer.diff(before, after, false)).isEmpty();
         }
@@ -254,9 +289,9 @@ class DiagnosisReplayerTest {
         @Test
         @DisplayName("un seuil modifié est nommé, avec l'ancienne et la nouvelle valeur")
         void thresholdChangeIsNamed() {
-            var before = replayer.snapshotOf("X", 0.9,
+            var before = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("AGRONOMIQUE", "humidite_sol", 35.0, "HAUTE")));
-            var after = replayer.snapshotOf("X", 0.9,
+            var after = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("AGRONOMIQUE", "humidite_sol", 32.0, "HAUTE")));
 
             var differences = replayer.diff(before, after, false);
@@ -270,9 +305,9 @@ class DiagnosisReplayerTest {
         @Test
         @DisplayName("une priorité modifiée est signalée à part")
         void priorityChangeIsItsOwnKind() {
-            var before = replayer.snapshotOf("X", 0.9,
+            var before = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("AGRONOMIQUE", "humidite_sol", 35.0, "MOYENNE")));
-            var after = replayer.snapshotOf("X", 0.9,
+            var after = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("AGRONOMIQUE", "humidite_sol", 35.0, "HAUTE")));
 
             assertThat(replayer.diff(before, after, false))
@@ -283,9 +318,9 @@ class DiagnosisReplayerTest {
         @Test
         @DisplayName("un conseil ajouté et un conseil retiré sont distingués")
         void addedAndRemovedAreDistinguished() {
-            var before = replayer.snapshotOf("X", 0.9,
+            var before = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("AGRONOMIQUE", "humidite_sol", 35.0, "HAUTE")));
-            var after = replayer.snapshotOf("X", 0.9,
+            var after = replayer.snapshotOf("tomate", "X", 0.9,
                     List.of(line("RISQUE", "humidite_air", 85.0, "MOYENNE")));
 
             assertThat(replayer.diff(before, after, false))
@@ -301,12 +336,12 @@ class DiagnosisReplayerTest {
         @Test
         @DisplayName("un libellé reformulé, à seuil égal, ne produit AUCUN écart")
         void rewordingAloneIsNotADifference() {
-            var before = replayer.snapshotOf("X", 0.9, List.of(
+            var before = replayer.snapshotOf("tomate", "X", 0.9, List.of(
                     DiagnosisReplay.Snapshot.Line.builder()
                             .content("L'humidité du sol vaut 24,00.")
                             .type("AGRONOMIQUE").priority("HAUTE")
                             .measureField("humidite_sol").thresholdValue(35.0).build()));
-            var after = replayer.snapshotOf("X", 0.9, List.of(
+            var after = replayer.snapshotOf("tomate", "X", 0.9, List.of(
                     DiagnosisReplay.Snapshot.Line.builder()
                             .content("Humidité du sol mesurée à 24,00 — sous le seuil.")
                             .type("AGRONOMIQUE").priority("HAUTE")

@@ -43,7 +43,9 @@ class PointInTimeAssemblerTest {
         knowledgeService = Mockito.mock(KnowledgeService.class);
         ConfidenceEvaluator confidence = new ConfidenceEvaluator(knowledgeService,
                 Mockito.mock(DiseaseLabeller.class), properties());
-        DiagnosisReplayer replayer = new DiagnosisReplayer(knowledgeService, confidence);
+        DiseaseLabeller labeller = Mockito.mock(DiseaseLabeller.class);
+        Mockito.when(labeller.labelFor(any(), any())).thenReturn("Mildiou de la tomate");
+        DiagnosisReplayer replayer = new DiagnosisReplayer(knowledgeService, confidence, labeller);
         assembler = new PointInTimeAssembler(replayer, confidence);
 
         // Les moteurs ne rendent rien par défaut : ce test porte sur l'assemblage,

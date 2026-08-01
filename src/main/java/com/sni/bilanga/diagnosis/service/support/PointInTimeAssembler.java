@@ -77,7 +77,8 @@ public class PointInTimeAssembler {
 
         DiagnosisReplay.Snapshot thenSnapshot = diagnostic == null
                 ? null
-                : replayer.snapshotOf(diagnostic.getResult(), diagnostic.getConfidenceScore(),
+                : replayer.snapshotOf(diagnostic.getCropName(), diagnostic.getResult(),
+                        diagnostic.getConfidenceScore(),
                         replayer.linesOfPersisted(persisted));
 
         // Comparer n'a de sens que si les DEUX côtés existent. Sans conclusion
@@ -138,7 +139,7 @@ public class PointInTimeAssembler {
         List<RecommendationItem> items =
                 replayer.recomputeItems(plot, cropName, reading, source, result);
 
-        return replayer.snapshotOf(result,
+        return replayer.snapshotOf(cropName, result,
                 diagnostic == null ? null : diagnostic.getConfidenceScore(),
                 replayer.linesOfItems(items));
     }

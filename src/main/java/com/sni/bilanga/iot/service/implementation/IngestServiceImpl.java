@@ -404,6 +404,9 @@ public class IngestServiceImpl implements IngestService {
             return result
                     .diagnosed(true)
                     .diagnosis(diagnosis.getResult())
+                    // Le nom français vient du diagnostic lui-même : l'ingestion n'a pas
+                    // à connaître la base de connaissance pour le rapporter.
+                    .diagnosisLabel(diagnosis.getResultLabel())
                     .recommendationCount(diagnosis.getRecommendations() == null
                             ? 0 : diagnosis.getRecommendations().size())
                     .build();

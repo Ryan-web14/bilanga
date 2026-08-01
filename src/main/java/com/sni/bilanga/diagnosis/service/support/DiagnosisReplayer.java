@@ -10,6 +10,7 @@ import com.sni.bilanga.knowledge.dto.response.DiseaseRisk;
 import com.sni.bilanga.knowledge.dto.response.RecommendationItem;
 import com.sni.bilanga.knowledge.dto.response.TrendFinding;
 import com.sni.bilanga.knowledge.service.interfaces.KnowledgeService;
+import com.sni.bilanga.knowledge.service.support.DiseaseLabeller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -80,6 +81,7 @@ public class DiagnosisReplayer {
 
     private final KnowledgeService knowledgeService;
     private final ConfidenceEvaluator confidenceEvaluator;
+    private final DiseaseLabeller diseaseLabeller;
 
     /**
      * @param diagnostic      diagnostic d'origine, relu en base
@@ -98,10 +100,10 @@ public class DiagnosisReplayer {
                 ? List.of()
                 : recomputeItems(diagnostic, cropName, reading);
 
-        DiagnosisReplay.Snapshot before = snapshotOf(
+        DiagnosisReplay.Snapshot before = snapshotOf(cropName,
                 diagnostic.getResult(), diagnostic.getConfidenceScore(), linesOfPersisted(original));
 
-        DiagnosisReplay.Snapshot after = snapshotOf(
+        DiagnosisReplay.Snapshot after = snapshotOf(cropName,
                 diagnostic.getResult(), diagnostic.getConfidenceScore(), linesOfItems(replayed));
 
         List<DiagnosisReplay.Difference> differences = diff(before, after, reading == null);
@@ -234,10 +236,15 @@ public class DiagnosisReplayer {
     // Instantanés
     // ============================================================
 
-    public DiagnosisReplay.Snapshot snapshotOf(String result, Double confidence,
+    /**
+     * @param cropName culture du diagnostic, nécessaire au nom français : le même code
+     *                 {@code healthy} se dit « Tomate saine » ou « Manioc sain »
+     */
+    public DiagnosisReplay.Snapshot snapshotOf(String cropName, String result, Double confidence,
                                                 List<DiagnosisReplay.Snapshot.Line> lines) {
         return DiagnosisReplay.Snapshot.builder()
                 .result(result)
+                .resultLabel(diseaseLabeller.labelFor(cropName, result))
                 .confidenceScore(confidence)
                 .confidenceLevel(confidenceEvaluator.level(confidence))
                 .reliable(confidenceEvaluator.isReliable(confidence))

@@ -107,6 +107,17 @@ public class DiagnosisReplay {
     public static class Snapshot {
 
         private String result;
+
+        /**
+         * Nom français du résultat.
+         *
+         * <p>Le modèle rend une classe anglaise issue de son jeu d'entraînement. Cet
+         * instantané est le seul objet du diagnostic qui présente le résultat
+         * <strong>à côté de son score de confiance</strong> : le laisser en anglais
+         * remettait un code brut au premier endroit que l'utilisateur lit.
+         */
+        private String resultLabel;
+
         private Double confidenceScore;
         private String confidenceLevel;
         private Boolean reliable;
