@@ -163,7 +163,7 @@ public class EconomicsFreezer {
         return new Divergence(true, changes, String.format(FR,
                 "Le bilan a divergé depuis la clôture : %s. Le chiffre arrêté reste la "
                         + "référence de la campagne ; l'écart signale des saisies ou des "
-                        + "corrections postérieures — une récolte ajoutée, une intervention "
+                        + "corrections postérieures : une récolte ajoutée, une intervention "
                         + "renseignée, ou une ligne supprimée.",
                 String.join(" ; ", changes)));
     }

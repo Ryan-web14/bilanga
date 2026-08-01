@@ -32,11 +32,11 @@ public enum CropClosureReason {
      */
     RECOLTE_ANTICIPEE("Récolte anticipée", true),
 
-    PERTE_MALADIE("Perte — maladie", false),
+    PERTE_MALADIE("Perte par maladie", false),
 
-    PERTE_CLIMATIQUE("Perte — climat", false),
+    PERTE_CLIMATIQUE("Perte climatique", false),
 
-    PERTE_RAVAGEURS("Perte — ravageurs", false),
+    PERTE_RAVAGEURS("Perte par ravageurs", false),
 
     /** Non récoltée, laissée en place. */
     ABANDON("Abandon", false),

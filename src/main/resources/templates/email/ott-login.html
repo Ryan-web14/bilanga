@@ -5,7 +5,7 @@
   ⚠️ MISE EN FORME EN LIGNE, ET C'EST OBLIGATOIRE. La plupart des clients de
   messagerie retirent les balises <style> ou ignorent les feuilles externes ;
   un courriel mis en forme « proprement » arrive alors sans aucun style. Le code
-  doit rester lisible dans tous les cas — c'est la seule information qui compte.
+  doit rester lisible dans tous les cas : c'est la seule information qui compte.
 
   Tableau et non flexbox : Outlook rend le HTML avec le moteur de Word, qui ne
   connaît ni flex ni grid.
@@ -35,7 +35,7 @@
                     <td style="padding:28px;">
 
                         <p style="margin:0 0 16px; font-size:16px; color:#1b1b1b;">
-                            Bonjour <span th:text="${firstname}">—</span>,
+                            Bonjour <span th:text="${firstname}">…</span>,
                         </p>
 
                         <p style="margin:0 0 24px; font-size:15px; color:#444444; line-height:1.5;">
@@ -78,7 +78,7 @@
                 <tr>
                     <td style="background-color:#fafafa; padding:16px 28px; border-top:1px solid #eeeeee;">
                         <p style="margin:0; font-size:12px; color:#999999; line-height:1.5;">
-                            Message automatique — merci de ne pas y répondre.<br/>
+                            Message automatique. Merci de ne pas y répondre.<br/>
                             Bilanga · plateforme d'agriculture intelligente
                         </p>
                     </td>

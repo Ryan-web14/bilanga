@@ -53,7 +53,7 @@ public class DerivedIndicators {
         if (vpd < VPD_OPTIMAL_LOW) return "Demande évaporative faible";
         if (vpd <= VPD_OPTIMAL_HIGH) return "Demande évaporative optimale";
         if (vpd <= VPD_EXCESSIVE) return "Demande évaporative élevée";
-        return "Stress évaporatif — la plante perd plus d'eau qu'elle n'en absorbe";
+        return "Stress évaporatif : la plante perd plus d'eau qu'elle n'en absorbe";
     }
 
     /**

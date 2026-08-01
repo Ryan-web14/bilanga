@@ -151,7 +151,7 @@ public class NotificationService {
             return;
         }
 
-        notification.setBody(notification.getBody() + System.lineSeparator() + "— " + addition);
+        notification.setBody(notification.getBody() + System.lineSeparator() + "· " + addition);
 
         // Le niveau de l'envoi suit le plus élevé des regroupées : réunir une
         // alerte critique dans un message annoncé « ELEVEE » masquerait

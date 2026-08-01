@@ -214,7 +214,7 @@ public class SuccessionAnalyzer {
         streaks.forEach((crop, count) -> warnings.add(String.format(FR,
                 "%s a été cultivé %d campagnes de suite sur cette parcelle. La "
                         + "monoculture épuise les mêmes réserves du sol et concentre les "
-                        + "ravageurs propres à l'espèce — envisagez une rotation.",
+                        + "ravageurs propres à l'espèce. Envisagez une rotation.",
                 crop, count)));
 
         return warnings;

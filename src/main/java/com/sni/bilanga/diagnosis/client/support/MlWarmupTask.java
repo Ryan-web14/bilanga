@@ -131,7 +131,7 @@ public class MlWarmupTask {
             log.info("Microservice d'inférence de nouveau joignable ({}).", url);
         } else {
             log.warn("Microservice d'inférence INJOIGNABLE ({}) : {}. Les diagnostics se "
-                    + "dégraderont en ML_INDISPONIBLE — les relevés restent enregistrés.",
+                    + "dégraderont en ML_INDISPONIBLE : les relevés restent enregistrés.",
                     url, cause == null ? "réponse inattendue" : cause);
         }
     }

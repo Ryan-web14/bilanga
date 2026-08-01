@@ -233,7 +233,7 @@ public class NeighbourhoodEngine {
                         + "parcelle : c'est une alerte de proximité, non un diagnostic. "
                         + "Inspectez le feuillage dans les jours qui viennent, en commençant "
                         + "par le bord de parcelle le plus exposé, et évitez de circuler d'une "
-                        + "parcelle à l'autre sans nettoyer outils et chaussures — c'est le "
+                        + "parcelle à l'autre sans nettoyer outils et chaussures, c'est le "
                         + "premier vecteur de propagation.%s",
                 displayNameOf(outbreak.diseaseCode()),
                 outbreak.plotCount() > 1

@@ -255,7 +255,7 @@ public class MarginCalculator {
                 e.getTotalCost().toPlainString(), e.getCurrency()));
 
         boolean profitable = e.getMargin().compareTo(BigDecimal.ZERO) >= 0;
-        text.append(String.format(FR, " — marge %s de %s %s.",
+        text.append(String.format(FR, ", soit une marge %s de %s %s.",
                 profitable ? "positive" : "NÉGATIVE",
                 e.getMargin().abs().toPlainString(), e.getCurrency()));
 

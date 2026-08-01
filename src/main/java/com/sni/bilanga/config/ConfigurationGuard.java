@@ -160,7 +160,7 @@ public class ConfigurationGuard implements InitializingBean {
                     + "cloisonnées par propriétaire, n'importe qui peut consulter n'importe "
                     + "quelle parcelle.";
             if (production) {
-                log.error("⚠⚠ EN PRODUCTION — {}", message);
+                log.error("⚠⚠ EN PRODUCTION : {}", message);
             } else {
                 log.warn("⚠ {}", message);
             }
@@ -172,10 +172,10 @@ public class ConfigurationGuard implements InitializingBean {
         if (app.getSecurity().getOpenBusinessRoutes().isEnabled()) {
             String message = "app.security.open-business-routes.enabled=true : toutes les "
                     + "routes métier sont ouvertes sans autorisation. AdminApiAuthorizationManager "
-                    + "n'est jamais consulté, et la matrice de permissions de la V24 est inerte "
-                    + "— seul @PreAuthorize protège encore les contrôleurs d'administration.";
+                    + "n'est jamais consulté, et la matrice de permissions de la V24 est inerte. "
+                    + "Seul @PreAuthorize protège encore les contrôleurs d'administration.";
             if (production) {
-                log.error("⚠⚠ EN PRODUCTION — {}", message);
+                log.error("⚠⚠ EN PRODUCTION : {}", message);
             } else {
                 log.warn("⚠ {}", message);
             }
@@ -241,7 +241,7 @@ public class ConfigurationGuard implements InitializingBean {
 
         log.warn("""
                 Posture de sécurité PERMISSIVE. Ordre de durcissement (impact croissant,
-                réversibilité décroissante) — rejouer docs/parcours-fonctionnel.http après
+                réversibilité décroissante). Rejouer docs/parcours-fonctionnel.http après
                 chaque étape :
                   1. app.security.ownership.enabled            = true   {}
                   2. app.security.auto-admin.enabled           = false  {}

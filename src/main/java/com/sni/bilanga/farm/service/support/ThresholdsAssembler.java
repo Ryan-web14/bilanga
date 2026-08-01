@@ -48,7 +48,7 @@ public class ThresholdsAssembler {
             + "semées à l'installation sont INDICATIVES : elles n'ont pas été validées "
             + "par une source agronomique congolaise. Elles se règlent par "
             + "/knowledge/crop-requirements, et une modification peut mettre jusqu'à "
-            + "trente minutes à se refléter — les tables de connaissance sont en cache.";
+            + "trente minutes à se refléter : les tables de connaissance sont en cache.";
 
     private final CropRequirementResolver requirementResolver;
     private final GrowthStageResolver growthStageResolver;

@@ -91,7 +91,7 @@ public class DefaultAdminSeeder implements ApplicationRunner {
         // élargirait l'annotation sans mesurer ce qu'il ouvre.
         if (environment.matchesProfiles("prod")) {
             log.error("⚠⚠ DefaultAdminSeeder atteint en profil prod : amorçage REFUSÉ. "
-                    + "Ce composant ne doit exister qu'en développement — vérifiez son @Profile.");
+                    + "Ce composant ne doit exister qu'en développement : vérifiez son @Profile.");
             return;
         }
 

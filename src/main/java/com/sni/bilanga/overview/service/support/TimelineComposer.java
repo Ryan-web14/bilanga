@@ -489,7 +489,7 @@ public class TimelineComposer {
                         .typeLabel(TimelineEventType.STADE.getLabel())
                         .title("Passage en " + start.stage().getLabel().toLowerCase(FR))
                         .detail(String.format(FR,
-                                "%s — stade déduit de la date de plantation (%s) et de la durée "
+                                "%s : stade déduit de la date de plantation (%s) et de la durée "
                                         + "du cycle. Les seuils agronomiques applicables changent "
                                         + "à partir d'ici.",
                                 Culture.canonical(crop.getCropName()), crop.getPlantingDate()))

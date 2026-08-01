@@ -205,7 +205,7 @@ public class ComparativeExplainer {
             text.append("les conditions mesurées réunissent ")
                     .append(String.join(", ", distinguishing))
                     .append(String.format(FR,
-                            " — ce qui correspond à %s (%.0f %% des conditions réunies) "
+                            ", ce qui correspond à %s (%.0f %% des conditions réunies) "
                                     + "et non à %s (%.0f %%).",
                             retainedName, retainedRisk.getRiskScore() * 100,
                             alternativeName, alternativeRisk.getRiskScore() * 100));

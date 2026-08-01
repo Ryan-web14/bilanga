@@ -521,7 +521,7 @@ public class CropServiceImpl implements CropService {
         String label = request.getReason().getLabel();
         return request.getNote() == null || request.getNote().isBlank()
                 ? label
-                : label + " — " + request.getNote().trim();
+                : label + " : " + request.getNote().trim();
     }
 
     private com.sni.bilanga.security.admin.user.model.Users currentUserOrNull() {

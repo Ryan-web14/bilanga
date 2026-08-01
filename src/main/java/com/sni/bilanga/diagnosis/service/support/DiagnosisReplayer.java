@@ -74,7 +74,7 @@ public class DiagnosisReplayer {
     private static final String LIMITATION =
             "Ce rejeu compare ce qui a été conclu à ce que la base de connaissance actuelle "
             + "conclurait sur le MÊME relevé. Un écart constate que la connaissance a changé ; "
-            + "il ne dit pas qu'elle a changé en mieux — c'est à vous d'en juger. "
+            + "il ne dit pas qu'elle a changé en mieux : c'est à vous d'en juger. "
             + "Le modèle d'image n'est pas rappelé (la photo n'est pas conservée) : sur un "
             + "diagnostic image, seuls les moteurs agronomiques sont rejoués. "
             + "Rien n'a été enregistré : cette simulation ne laisse aucune trace.";

@@ -86,7 +86,7 @@ public class AsyncConfig implements AsyncConfigurer {
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
         return (throwable, method, params) -> {
-            log.error("Échec d'une tâche asynchrone {} — la trace correspondante n'a pas été "
+            log.error("Échec d'une tâche asynchrone {} : la trace correspondante n'a pas été "
                     + "écrite. L'opération métier elle-même a abouti.",
                     method.getName(), throwable);
             new SimpleAsyncUncaughtExceptionHandler()

@@ -113,8 +113,8 @@ public class AgronomicEngine {
             out.add(build("RISQUE_MALADIE", "vpd", vpd, DerivedIndicators.VPD_CONFINED,
                     DerivedIndicators.VPD_CONFINED - vpd, severity,
                     String.format(FR,
-                            "Déficit de pression de vapeur à %.2f kPa (seuil de confinement : %.2f kPa) — "
-                                    + "l'air est proche de la saturation à %.1f °C et %.1f %% d'humidité. "
+                            "Déficit de pression de vapeur à %.2f kPa (seuil de confinement : %.2f kPa). "
+                                    + "L'air est proche de la saturation à %.1f °C et %.1f %% d'humidité. "
                                     + "La transpiration est entravée et l'eau stagne sur le feuillage.",
                             vpd, DerivedIndicators.VPD_CONFINED, r.getTemperature(), r.getHumiditeAir())));
 
@@ -125,8 +125,8 @@ public class AgronomicEngine {
             out.add(build("STRESS_HYDRIQUE", "vpd", vpd, DerivedIndicators.VPD_EXCESSIVE,
                     vpd - DerivedIndicators.VPD_EXCESSIVE, severity,
                     String.format(FR,
-                            "Déficit de pression de vapeur à %.2f kPa (seuil de stress : %.2f kPa) — "
-                                    + "à %.1f °C et %.1f %% d'humidité, la demande évaporative dépasse "
+                            "Déficit de pression de vapeur à %.2f kPa (seuil de stress : %.2f kPa). "
+                                    + "À %.1f °C et %.1f %% d'humidité, la demande évaporative dépasse "
                                     + "ce que les racines peuvent compenser, même en sol pourvu.",
                             vpd, DerivedIndicators.VPD_EXCESSIVE, r.getTemperature(), r.getHumiditeAir())));
         }
@@ -178,7 +178,7 @@ public class AgronomicEngine {
         if (severity < agronomic.getMinSeverity()) return;
 
         out.add(build(category, field, observed, min, gap, severity,
-                String.format(FR, "%s : %.1f%s  seuil bas de la culture %s : %.1f%s (déficit de %.1f%s).",
+                String.format(FR, "%s : %.1f%s, en deçà du seuil bas de la culture %s : %.1f%s (déficit de %.1f%s).",
                         label, observed, unit, crop, min, unit, gap, unit)));
     }
 
@@ -192,7 +192,7 @@ public class AgronomicEngine {
         if (severity < agronomic.getMinSeverity()) return;
 
         out.add(build(category, field, observed, max, gap, severity,
-                String.format(FR, "%s : %.1f%s — seuil haut de la culture %s : %.1f%s (excès de %.1f%s).",
+                String.format(FR, "%s : %.1f%s, au-delà du seuil haut de la culture %s : %.1f%s (excès de %.1f%s).",
                         label, observed, unit, crop, max, unit, gap, unit)));
     }
 

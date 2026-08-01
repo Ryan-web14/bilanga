@@ -276,7 +276,7 @@ public class PointInTimeAssembler {
         if (PointInTimeResolver.ALIGNMENT_IN_FORCE.equals(diagPick.alignment())) {
             parts.add("Le diagnostic montré n'a PAS été produit par ce relevé : c'est le dernier "
                     + "qui précédait, donc celui qui s'affichait alors. Le système ne conclut pas "
-                    + "à chaque mesure — un intervalle minimal et l'absence de variation "
+                    + "à chaque mesure : un intervalle minimal et l'absence de variation "
                     + "suffisent à ce qu'un relevé n'en produise aucun.");
         }
 
@@ -284,14 +284,14 @@ public class PointInTimeAssembler {
             parts.add("Aucun diagnostic n'était en vigueur : c'est le cas ordinaire sur un "
                     + "relevé isolé, non une anomalie. Il n'y a donc rien à comparer, et les "
                     + "conseils affichés à droite sont ceux que la connaissance actuelle "
-                    + "produirait — pas ceux qui avaient été donnés.");
+                    + "produirait, et non ceux qui avaient été donnés.");
         }
 
         if (cropName == null) {
             parts.add("Aucune culture n'a pu être rattachée à cette parcelle : les moteurs "
                     + "agronomiques n'ont pas tourné, faute de seuils de référence.");
         } else if (!diagPick.isPresent()) {
-            parts.add("L'étape de classification par le modèle n'est pas rejouée — le modèle a "
+            parts.add("L'étape de classification par le modèle n'est pas rejouée : le modèle a "
                     + "pu être réentraîné depuis. Seuls les moteurs agronomiques déterministes "
                     + "ont été appliqués.");
         }

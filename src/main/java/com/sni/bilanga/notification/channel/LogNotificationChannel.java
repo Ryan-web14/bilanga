@@ -29,7 +29,7 @@ public class LogNotificationChannel implements NotificationChannel {
 
     @Override
     public void send(NotificationOutbox notification) {
-        log.warn("[NOTIFICATION {}] parcelle={} alerte={} · {} — {}",
+        log.warn("[NOTIFICATION {}] parcelle={} alerte={} · {} : {}",
                 notification.getLevel(),
                 notification.getPlotId(),
                 notification.getAlertId(),

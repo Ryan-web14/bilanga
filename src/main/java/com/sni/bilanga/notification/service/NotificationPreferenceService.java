@@ -175,7 +175,7 @@ public class NotificationPreferenceService {
                 : String.format("de %02dh à %02dh le lendemain", from, to);
 
         return "Aucune notification " + span
-               + ", sauf alerte critique — qui passe outre, sans quoi ce niveau ne voudrait rien dire.";
+               + ", sauf alerte critique, qui passe outre, sans quoi ce niveau ne voudrait rien dire.";
     }
 
     private Users requireUser(Long userId) {

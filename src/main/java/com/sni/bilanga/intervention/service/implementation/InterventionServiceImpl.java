@@ -226,7 +226,7 @@ public class InterventionServiceImpl implements InterventionService {
         recommendation.setStatus(RecommendationStatus.APPLIQUEE.name());
         recommendation.setFeedbackAt(Instant.now());
         if (recommendation.getFeedbackNote() == null) {
-            recommendation.setFeedbackNote("Appliqué — intervention " + intervention.getId()
+            recommendation.setFeedbackNote("Appliqué : intervention " + intervention.getId()
                                            + " du " + intervention.getPerformedAt() + ".");
         }
         recommendationRepository.save(recommendation);

@@ -156,7 +156,7 @@ public class HttpSmsChannel implements NotificationChannel {
         String subject = notification.getSubject() == null ? "" : notification.getSubject();
         String body = notification.getBody() == null ? "" : notification.getBody();
 
-        String message = subject.isBlank() ? body : subject + " — " + body;
+        String message = subject.isBlank() ? body : subject + " : " + body;
         if (message.length() <= config.getMaxLength()) {
             return message;
         }

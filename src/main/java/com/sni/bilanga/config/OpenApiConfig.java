@@ -30,7 +30,7 @@ public class OpenApiConfig {
     public OpenAPI bilangaOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Bilanga — API")
+                        .title("Bilanga API")
                         .version("v1")
                         .description("""
                                 Orchestrateur de la plateforme d'agriculture intelligente : \
